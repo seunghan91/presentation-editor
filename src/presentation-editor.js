@@ -34,9 +34,9 @@
     console.info('[presentation-editor] already loaded v' + window.__ptEditorLoaded + ', skipping');
     return;
   }
-  window.__ptEditorLoaded = '1.1.1';
+  window.__ptEditorLoaded = '1.2.0';
   window.PresentationEditor = window.PresentationEditor || {
-    version: '1.1.1',
+    version: '1.2.0',
     theme: null,
     isComposing: false
   };
@@ -283,6 +283,10 @@
     try { initThemeSwitcher();  } catch(e) { console.warn('[pt] theme switcher', e); }
     try { initFontPicker();     } catch(e) { console.warn('[pt] font picker', e); }
     try { initOgButton();       } catch(e) { console.warn('[pt] og button', e); }
+    // 모바일 배너 — 1.5초 후 표시 (사용자가 콘텐츠 본 다음)
+    setTimeout(function () {
+      try { window.PresentationEditor.initMobileBanner(); } catch(e) {}
+    }, 1500);
     // Layer A/B/C — 자동 텍스트 편집 + 토스트 + 라이트박스
     try { window.PresentationEditor.setupToast();   } catch(e) { console.warn('[pt] toast', e); }
     try { window.PresentationEditor.initAutoEdit(); } catch(e) { console.warn('[pt] auto-edit', e); }
@@ -1068,12 +1072,31 @@ $ 명령어 입력
     tb.appendChild(fsBtn);
     fsBtn.addEventListener('click', toggleFullscreen);
 
-    // PDF 인쇄 — 슬라이드별 페이지 분리, 편집 UI 숨김
+    // PDF 인쇄 — 슬라이드별 페이지 분리, 편집 UI 숨김 (빠름·작음)
     const pdfBtn = document.createElement('button');
-    pdfBtn.textContent = '📄 PDF 저장 (인쇄)';
+    pdfBtn.textContent = '📄 PDF (인쇄)';
+    pdfBtn.title = 'window.print() — 빠름, 파일 작음, 그라데이션·한글 폰트는 fallback';
     pdfBtn.style.cssText = 'background:#ff8d28; color:#fff; border:none; padding:8px 12px; border-radius:8px; font-weight:700; cursor:pointer; margin-top:4px;';
     tb.appendChild(pdfBtn);
     pdfBtn.addEventListener('click', () => window.print());
+
+    // PDF 고품질 — html2canvas + jsPDF, 시각 100% (그라데이션·한글 폰트·mermaid 그대로)
+    const pdfHqBtn = document.createElement('button');
+    pdfHqBtn.textContent = '📄 PDF 고품질 (이미지)';
+    pdfHqBtn.title = 'jsPDF + html2canvas 동적 로드. 시각 충실도 100%, 파일 큼 (15~25MB)';
+    pdfHqBtn.style.cssText = 'background:#cb30e0; color:#fff; border:none; padding:8px 12px; border-radius:8px; font-weight:700; cursor:pointer; margin-top:4px;';
+    tb.appendChild(pdfHqBtn);
+    pdfHqBtn.addEventListener('click', () => window.PresentationEditor.exportPdfHighQuality());
+
+    // 모바일 PDF 보기 (모바일에서만 표시)
+    if (window.PresentationEditor.isMobile && window.PresentationEditor.isMobile()) {
+      const pdfMobileBtn = document.createElement('button');
+      pdfMobileBtn.textContent = '📱 PDF 새 탭 (가로)';
+      pdfMobileBtn.title = '모바일 PDF 뷰어에서 열기 — 좌우 회전 + pinch-zoom 지원';
+      pdfMobileBtn.style.cssText = 'background:#0088ff; color:#fff; border:none; padding:8px 12px; border-radius:8px; font-weight:700; cursor:pointer; margin-top:4px;';
+      tb.appendChild(pdfMobileBtn);
+      pdfMobileBtn.addEventListener('click', () => window.PresentationEditor.viewPdfMobile());
+    }
 
     // 인쇄 직전 — 그라데이션 텍스트 인라인 style 직접 교체 (CSS !important 보다 확실)
     window.addEventListener('beforeprint', () => {
@@ -2362,6 +2385,234 @@ $ 명령어 입력
   }
   window.PresentationEditor.downloadOgImage = downloadOgImage;
   window.PresentationEditor.uploadOgToAxAdmin = uploadOgToAxAdmin;
+
+  /* ============================================================
+     고품질 PDF 내보내기 — jsPDF + html2canvas 동적 로드
+     window.print() 대비: 그라데이션 100%, 한글 폰트 raster 캡처,
+     페이지 break 정확. 단점: 200KB 동적 로드 + 출력 PDF 큼 (이미지 PDF)
+     ============================================================ */
+  var jspdfPromise = null;
+  function loadJsPdf() {
+    if (window.jspdf && window.jspdf.jsPDF) return Promise.resolve(window.jspdf.jsPDF);
+    if (jspdfPromise) return jspdfPromise;
+    jspdfPromise = new Promise(function (resolve, reject) {
+      var s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js';
+      s.onload = function () { resolve(window.jspdf.jsPDF); };
+      s.onerror = function () { reject(new Error('jsPDF 로드 실패')); };
+      document.head.appendChild(s);
+    });
+    return jspdfPromise;
+  }
+
+  async function preloadFonts() {
+    if (!document.fonts || !document.fonts.ready) return;
+    try {
+      await document.fonts.ready;
+      // 한글 + 영문 폰트 명시적 로드 (현재 사용 중인 것)
+      var probes = [
+        '400 16px "Pretendard"', '700 24px "Pretendard"',
+        '400 16px "Pretendard Variable"', '700 24px "Pretendard Variable"',
+        '400 16px "SF Pro Display"', '700 24px "SF Pro Display"',
+        '400 16px "Outfit"', '700 24px "Outfit"',
+        '400 16px "Noto Sans KR"', '700 24px "Noto Sans KR"',
+        '400 16px "Spoqa Han Sans Neo"',
+        '700 24px "Gmarket Sans"',
+        '400 16px "Playfair Display"', '400 16px "Noto Serif KR"'
+      ];
+      await Promise.all(probes.map(function (p) {
+        return document.fonts.load(p).catch(function () { return null; });
+      }));
+      // 추가 100ms 대기 — 렌더 완료 보장
+      await new Promise(function (r) { setTimeout(r, 150); });
+    } catch (e) { console.warn('[pt] font preload failed', e); }
+  }
+
+  async function exportPdfHighQuality(opts) {
+    opts = opts || {};
+    var slideSelector = opts.selector || '.slide';
+    var slug = (location.pathname.match(/\/pt\/([^\/]+)/) || [])[1] || 'slides';
+
+    showToast && showToast('⏳ PDF 라이브러리 로드 중…');
+
+    try {
+      var html2canvas = await loadHtml2Canvas();
+      var jsPDF = await loadJsPdf();
+
+      // 편집 UI 잠시 숨김
+      var hideEls = document.querySelectorAll('#ie-toolbar, #pt-theme-switcher, #pt-font-picker, #slide-counter, .lightbox-overlay, .edit-fab, .edit-toast');
+      var savedDisplays = [];
+      hideEls.forEach(function (el) { savedDisplays.push([el, el.style.display]); el.style.display = 'none'; });
+
+      try {
+        showToast && showToast('🔤 폰트 로드 중…');
+        await preloadFonts();
+
+        var slides = document.querySelectorAll(slideSelector);
+        if (slides.length === 0) throw new Error('슬라이드 없음');
+
+        // 16:9 landscape PDF (1920×1080 비율)
+        var pdf = new jsPDF({
+          orientation: 'landscape',
+          unit: 'px',
+          format: [1920, 1080],
+          compress: true,
+          hotfixes: ['px_scaling']
+        });
+
+        for (var i = 0; i < slides.length; i++) {
+          showToast && showToast('📸 캡처 중 ' + (i + 1) + '/' + slides.length);
+          var slide = slides[i];
+
+          var canvas = await html2canvas(slide, {
+            scale: 2,
+            useCORS: true,
+            allowTaint: true,
+            logging: false,
+            backgroundColor: getComputedStyle(slide).backgroundColor || '#ffffff',
+            imageTimeout: 15000,
+            windowWidth: slide.offsetWidth || 1920,
+            windowHeight: slide.offsetHeight || 1080
+          });
+
+          if (i > 0) pdf.addPage([1920, 1080], 'landscape');
+
+          // 캔버스를 페이지에 fit (16:9 letterbox if needed)
+          var canvasRatio = canvas.width / canvas.height;
+          var pageRatio = 1920 / 1080;
+          var dw, dh, dx, dy;
+          if (canvasRatio > pageRatio) {
+            dw = 1920; dh = 1920 / canvasRatio; dx = 0; dy = (1080 - dh) / 2;
+          } else {
+            dh = 1080; dw = 1080 * canvasRatio; dx = (1920 - dw) / 2; dy = 0;
+          }
+          var imgData = canvas.toDataURL('image/jpeg', 0.92);
+          pdf.addImage(imgData, 'JPEG', dx, dy, dw, dh, undefined, 'FAST');
+        }
+
+        showToast && showToast('💾 PDF 저장 중…');
+        pdf.save(slug + '-' + new Date().toISOString().slice(0, 10) + '.pdf');
+        showToast && showToast('✅ 고품질 PDF 다운로드 완료');
+      } finally {
+        savedDisplays.forEach(function (pair) { pair[0].style.display = pair[1]; });
+      }
+    } catch (e) {
+      console.error('[pt] PDF export failed', e);
+      showToast && showToast('⚠️ PDF 생성 실패: ' + e.message);
+    }
+  }
+  window.PresentationEditor.exportPdfHighQuality = exportPdfHighQuality;
+
+  // 모바일 감지 (touch + 좁은 화면)
+  function isMobileDevice() {
+    return ('ontouchstart' in window || navigator.maxTouchPoints > 0) &&
+           Math.min(window.innerWidth, window.innerHeight) < 900;
+  }
+  window.PresentationEditor.isMobile = isMobileDevice;
+
+  // 모바일용 PDF 미리보기 — 다운로드 대신 새 탭/iframe 으로 열기
+  async function viewPdfMobile() {
+    showToast && showToast('⏳ PDF 생성 중… (10~20초)');
+    try {
+      var html2canvas = await loadHtml2Canvas();
+      var jsPDF = await loadJsPdf();
+
+      var hideEls = document.querySelectorAll('#ie-toolbar, #pt-theme-switcher, #pt-font-picker, #slide-counter, .lightbox-overlay, .edit-fab, .edit-toast, #pt-mobile-banner');
+      var savedDisplays = [];
+      hideEls.forEach(function (el) { savedDisplays.push([el, el.style.display]); el.style.display = 'none'; });
+
+      try {
+        await preloadFonts();
+        var slides = document.querySelectorAll('.slide');
+        if (slides.length === 0) throw new Error('슬라이드 없음');
+
+        var pdf = new jsPDF({
+          orientation: 'landscape', unit: 'px', format: [1920, 1080],
+          compress: true, hotfixes: ['px_scaling']
+        });
+
+        for (var i = 0; i < slides.length; i++) {
+          if (i % 2 === 0) showToast && showToast('📸 ' + (i + 1) + '/' + slides.length);
+          var canvas = await html2canvas(slides[i], {
+            scale: 1.5, useCORS: true, allowTaint: true, logging: false,
+            backgroundColor: getComputedStyle(slides[i]).backgroundColor || '#ffffff',
+            windowWidth: slides[i].offsetWidth || 1920,
+            windowHeight: slides[i].offsetHeight || 1080
+          });
+          if (i > 0) pdf.addPage([1920, 1080], 'landscape');
+          var ratio = canvas.width / canvas.height;
+          var dw, dh, dx, dy;
+          if (ratio > 1920/1080) { dw=1920; dh=1920/ratio; dx=0; dy=(1080-dh)/2; }
+          else { dh=1080; dw=1080*ratio; dx=(1920-dw)/2; dy=0; }
+          pdf.addImage(canvas.toDataURL('image/jpeg', 0.88), 'JPEG', dx, dy, dw, dh, undefined, 'FAST');
+        }
+
+        // 다운로드 대신 blob URL → 새 탭 (모바일 Safari/Chrome 이 PDF 뷰어로 열음)
+        var blob = pdf.output('blob');
+        var url = URL.createObjectURL(blob);
+        showToast && showToast('✅ 새 탭에서 열기 — 좌우로 회전해서 보기');
+        var win = window.open(url, '_blank');
+        if (!win) {
+          // 팝업 차단 시 다운로드 폴백
+          var a = document.createElement('a');
+          a.href = url; a.download = 'slides.pdf'; a.click();
+        }
+        // URL 은 30초 후 revoke (탭에서 로드 완료 후)
+        setTimeout(function () { URL.revokeObjectURL(url); }, 30000);
+      } finally {
+        savedDisplays.forEach(function (pair) { pair[0].style.display = pair[1]; });
+      }
+    } catch (e) {
+      console.error('[pt] mobile PDF view failed', e);
+      showToast && showToast('⚠️ ' + e.message);
+    }
+  }
+  window.PresentationEditor.viewPdfMobile = viewPdfMobile;
+
+  // 모바일 floating 배너 — "📄 PDF 로 보기" 권장
+  function initMobileBanner() {
+    if (!isMobileDevice()) return;
+    if (document.getElementById('pt-mobile-banner')) return;
+
+    // 사용자가 한 번 닫으면 24시간 안 보임
+    try {
+      var dismissed = localStorage.getItem('pt-mobile-banner-dismissed');
+      if (dismissed && Date.now() - parseInt(dismissed, 10) < 86400000) return;
+    } catch (_) {}
+
+    var banner = document.createElement('div');
+    banner.id = 'pt-mobile-banner';
+    banner.style.cssText = [
+      'position:fixed', 'bottom:18px', 'left:50%', 'transform:translateX(-50%)',
+      'background:rgba(28,28,30,0.94)', 'color:#fff',
+      'backdrop-filter:blur(14px)', '-webkit-backdrop-filter:blur(14px)',
+      'border-radius:14px', 'padding:10px 14px',
+      'display:flex', 'align-items:center', 'gap:10px',
+      'box-shadow:0 8px 24px rgba(0,0,0,.4)',
+      'z-index:99997', 'max-width:calc(100vw - 32px)',
+      'font-family:-apple-system,sans-serif', 'font-size:13px'
+    ].join(';');
+    banner.innerHTML = [
+      '<span style="font-size:20px">📄</span>',
+      '<div style="flex:1;line-height:1.35">',
+      '  <div style="font-weight:700">모바일 가독성 향상</div>',
+      '  <div style="font-size:11px;opacity:0.75">PDF 로 보면 글자 큼 + 좌우 회전 가능</div>',
+      '</div>',
+      '<button id="pt-mb-go" style="background:#0088ff;color:#fff;border:none;padding:8px 12px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;flex-shrink:0">PDF 로 보기</button>',
+      '<button id="pt-mb-x" style="background:rgba(255,255,255,.15);color:#fff;border:none;padding:8px 10px;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;line-height:1;flex-shrink:0">×</button>'
+    ].join('');
+    document.body.appendChild(banner);
+
+    document.getElementById('pt-mb-go').addEventListener('click', function () {
+      banner.remove();
+      viewPdfMobile();
+    });
+    document.getElementById('pt-mb-x').addEventListener('click', function () {
+      banner.remove();
+      try { localStorage.setItem('pt-mobile-banner-dismissed', String(Date.now())); } catch (_) {}
+    });
+  }
+  window.PresentationEditor.initMobileBanner = initMobileBanner;
 
   // OG 캡처 버튼을 toolbar 에 추가
   function initOgButton() {

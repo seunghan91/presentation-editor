@@ -10,6 +10,22 @@
 
 ![Demo](docs/demo.gif)
 
+## 빠른 시작 — CDN 한 줄
+
+```html
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@beast2025/presentation-editor@latest/themes/ios26.css">
+<script src="https://cdn.jsdelivr.net/npm/@beast2025/presentation-editor@latest/src/presentation-editor.js"></script>
+```
+
+또는 npm:
+```bash
+npm install @beast2025/presentation-editor
+```
+
+[![npm](https://img.shields.io/npm/v/@beast2025/presentation-editor.svg?color=cb3837)](https://www.npmjs.com/package/@beast2025/presentation-editor)
+[![jsDelivr](https://data.jsdelivr.com/v1/package/npm/@beast2025/presentation-editor/badge)](https://www.jsdelivr.com/package/npm/@beast2025/presentation-editor)
+
+
 ## 무엇을 하는가
 
 이미 빌드된 HTML 발표자료에 `<script>` 한 줄 인라인으로 박으면 **편집기·테마 스위처·폰트 picker·이미지 업로드·PDF 내보내기** 가 활성화됨. React/Vue/build pipeline 없음 — 어떤 정적 HTML 에도 즉시 작동.
@@ -97,7 +113,7 @@
 ├── README.ja.md                 # 日本語
 ├── README.zh.md                 # 中文
 ├── LICENSE                      # MIT
-└── package.json                 # @seunghan/presentation-editor
+└── package.json                 # @beast2025/presentation-editor
 ```
 
 ## API (전역 `window.PresentationEditor`)

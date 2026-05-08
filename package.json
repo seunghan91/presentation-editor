@@ -1,5 +1,5 @@
 {
-  "name": "@seunghan/presentation-editor",
+  "name": "@beast2025/presentation-editor",
   "version": "1.2.1",
   "description": "Vanilla JS in-browser editor for static HTML presentations. Slide builder, theme/font picker, image upload (HEIC), IndexedDB persistence.",
   "main": "src/presentation-editor.js",

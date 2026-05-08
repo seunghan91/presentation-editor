@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] — 2026-05-08
+
+### Fixed
+- **Critical: mobile PDF capture corruption** — html2canvas was capturing slides at the mobile viewport width (e.g. 390px) instead of the design 1920px, then PDF embed stretched the small raster, garbling all text. Fixed by forcing `width: 1920, height: 1080, windowWidth: 1920, windowHeight: 1080` in html2canvas options for `exportPdfHighQuality`, `viewPdfMobile`, and `captureFirstSlide`. Mobile-rendered PDFs now have desktop-quality typography.
+
 ## [1.2.0] — 2026-05-08
 
 ### Added

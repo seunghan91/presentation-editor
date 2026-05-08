@@ -34,9 +34,9 @@
     console.info('[presentation-editor] already loaded v' + window.__ptEditorLoaded + ', skipping');
     return;
   }
-  window.__ptEditorLoaded = '1.2.0';
+  window.__ptEditorLoaded = '1.2.1';
   window.PresentationEditor = window.PresentationEditor || {
-    version: '1.2.0',
+    version: '1.2.1',
     theme: null,
     isComposing: false
   };
@@ -2290,8 +2290,9 @@ $ 명령어 입력
         scale: 2,
         useCORS: true,
         logging: false,
-        windowWidth: slide.offsetWidth,
-        windowHeight: slide.offsetHeight
+        // 강제 1920x1080 — 모바일에서도 데스크톱 품질 OG 이미지
+        width: 1920, height: 1080,
+        windowWidth: 1920, windowHeight: 1080
       });
 
       // OG 사이즈로 리사이징 (1200×630, letterbox if needed)
@@ -2471,8 +2472,9 @@ $ 명령어 입력
             logging: false,
             backgroundColor: getComputedStyle(slide).backgroundColor || '#ffffff',
             imageTimeout: 15000,
-            windowWidth: slide.offsetWidth || 1920,
-            windowHeight: slide.offsetHeight || 1080
+            // 강제 1920x1080 — 모바일 viewport 에서도 데스크톱 캡처 품질
+            width: 1920, height: 1080,
+            windowWidth: 1920, windowHeight: 1080
           });
 
           if (i > 0) pdf.addPage([1920, 1080], 'landscape');
@@ -2533,11 +2535,12 @@ $ 명령어 입력
 
         for (var i = 0; i < slides.length; i++) {
           if (i % 2 === 0) showToast && showToast('📸 ' + (i + 1) + '/' + slides.length);
+          // 강제 1920x1080 캡처 (모바일 viewport 에서도 데스크톱 품질)
           var canvas = await html2canvas(slides[i], {
             scale: 1.5, useCORS: true, allowTaint: true, logging: false,
             backgroundColor: getComputedStyle(slides[i]).backgroundColor || '#ffffff',
-            windowWidth: slides[i].offsetWidth || 1920,
-            windowHeight: slides[i].offsetHeight || 1080
+            width: 1920, height: 1080,
+            windowWidth: 1920, windowHeight: 1080
           });
           if (i > 0) pdf.addPage([1920, 1080], 'landscape');
           var ratio = canvas.width / canvas.height;

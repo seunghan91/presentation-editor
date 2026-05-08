@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Presentation Editor — 동작 예시</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css">
+<link rel="stylesheet" href="../themes/ios26.css">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { font-family: var(--pt-font-family); background: var(--pt-bg-primary); color: var(--pt-label-primary); -webkit-font-smoothing: antialiased; }
+html { scroll-snap-type: y mandatory; height: 100vh; overflow-y: scroll; scroll-behavior: smooth; }
+.slide { scroll-snap-align: start; scroll-snap-stop: always; height: 100vh; width: 100vw; position: relative; overflow: hidden; display: flex; align-items: center; justify-content: center; padding: 48px 64px; word-break: keep-all; }
+.slide-content { width: 100%; max-width: 1500px; }
+.slide.featured { background: var(--pt-bg-cover); }
+.slide.accent-bg { background: var(--pt-bg-accent); color: #fff; }
+.eyebrow { font-size: 13px; letter-spacing: 1.5px; color: var(--pt-color-blue); font-weight: 600; text-transform: uppercase; }
+.em { background: var(--pt-gradient-em); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+.cover h1 { font-size: 84px; font-weight: 800; letter-spacing: -2px; line-height: 1.15; }
+.cover-sub { margin-top: 32px; font-size: 22px; color: var(--pt-label-secondary); }
+.note-bar { margin-top: 36px; padding: 18px 22px; background: var(--pt-bg-secondary); border-radius: 14px; font-size: 15px; line-height: 1.6; }
+.page-num { position: absolute; bottom: 24px; right: 32px; font-size: 12px; color: var(--pt-label-tertiary); font-family: var(--pt-font-mono); }
+</style>
+</head>
+<body data-pt-theme="ios26">
+
+<!-- Slide 1 — Cover -->
+<div class="slide featured">
+  <div class="slide-content">
+    <div class="eyebrow">presentation-editor 데모</div>
+    <h1 class="cover h1" style="font-size:84px;font-weight:800;line-height:1.15;letter-spacing:-2px;margin-top:24px">
+      한 줄 인라인으로<br><span class="em">모든 기능 활성</span>
+    </h1>
+    <div class="cover-sub">우상단 toolbar 호버 → 편집모드 ON → 슬라이드 텍스트 클릭 → 즉시 편집</div>
+    <div class="note-bar">▎ 사용법: 우상단 작은 + 버튼에 마우스 올리면 toolbar 펼쳐짐. 편집모드 ON 후 어디든 클릭해서 편집 시도해보세요.</div>
+  </div>
+  <div class="page-num">01 / 03</div>
+</div>
+
+<!-- Slide 2 — Features -->
+<div class="slide">
+  <div class="slide-content">
+    <div class="eyebrow">v1.2.0 기능</div>
+    <h2 style="font-size:42px;font-weight:700;letter-spacing:-.5px;margin:8px 0 24px">
+      <span class="em">한 번 박으면</span> 다 됨
+    </h2>
+    <ul style="font-size:18px;line-height:1.85;list-style:none;padding:0">
+      <li>🎨 테마 스위처 (ios26 / sunset / classic)</li>
+      <li>🔤 폰트 picker (iOS Pro / Outfit·Pretendard / Inter·Noto / 외 3종)</li>
+      <li>🖼 이미지 4-way 업로드 (드롭/페이스트/URL/picker + HEIC 자동 변환)</li>
+      <li>📄 PDF 3-tier (인쇄/고품질/모바일 새 탭)</li>
+      <li>📸 OG 이미지 캡처 + 업로드</li>
+      <li>💾 IndexedDB 자동 저장</li>
+      <li>🌐 한글 IME 안전 처리</li>
+      <li>⛶ 풀스크린 + 키보드 네비</li>
+    </ul>
+    <div class="note-bar">▎ 핵심: 정적 HTML 어디든 박힘. React/Vue/build pipeline 불필요. 110KB 코어 + 필요할 때만 동적 로드.</div>
+  </div>
+  <div class="page-num">02 / 03</div>
+</div>
+
+<!-- Slide 3 — Closing -->
+<div class="slide accent-bg">
+  <div class="slide-content" style="text-align:center">
+    <div style="font-size:13px;letter-spacing:2px;color:rgba(255,255,255,.7);font-weight:700;text-transform:uppercase;margin-bottom:24px">Get Started</div>
+    <h1 style="font-size:72px;font-weight:800;letter-spacing:-2px;line-height:1.2;color:#fff">
+      <span style="color:var(--pt-color-yellow,#ffcc00)">한 줄 인라인</span>으로<br>
+      <span style="color:var(--pt-color-yellow,#ffcc00)">정적 HTML</span> 깨우기
+    </h1>
+    <div style="margin-top:32px;font-size:22px;color:rgba(255,255,255,.85);line-height:1.55;font-family:var(--pt-font-mono)">
+      &lt;script src="presentation-editor.js"&gt;&lt;/script&gt;
+    </div>
+    <div class="note-bar" style="background:rgba(0,0,0,.35);color:#fff">
+      ▎ MIT · GitHub: <strong>seunghan91/presentation-editor</strong>
+    </div>
+  </div>
+  <div class="page-num" style="color:rgba(255,255,255,.5)">03 / 03</div>
+</div>
+
+<!-- Optional CDN libs -->
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+
+<!-- Main library -->
+<script src="../src/presentation-editor.js"></script>
+</body>
+</html>

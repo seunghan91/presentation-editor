@@ -1,0 +1,33 @@
+{
+  "name": "@seunghan/presentation-editor",
+  "version": "1.1.0",
+  "description": "Vanilla JS in-browser editor for static HTML presentations. Slide builder, theme/font picker, image upload (HEIC), IndexedDB persistence.",
+  "main": "src/presentation-editor.js",
+  "files": [
+    "src/",
+    "themes/",
+    "README.md",
+    "LICENSE"
+  ],
+  "keywords": [
+    "presentation",
+    "slides",
+    "editor",
+    "in-browser",
+    "vanilla-js",
+    "contenteditable",
+    "indexeddb",
+    "heic",
+    "korean"
+  ],
+  "author": "김승한 (Seunghan) <theqwe2000@gmail.com>",
+  "license": "MIT",
+  "homepage": "https://www.axhub.space/lib/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/seunghan91/presentation-editor"
+  },
+  "scripts": {
+    "sync:ax-admin": "cp src/presentation-editor.js ../ax_admin/public/lib/presentation-editor.js && cp themes/*.css ../ax_admin/public/lib/themes/"
+  }
+}

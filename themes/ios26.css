@@ -1,0 +1,98 @@
+/* ============================================================
+   ios26.css — Presentation Theme · iOS 26 System Tokens
+   Author: 김승한 (Seunghan) · License: MIT
+   ------------------------------------------------------------
+   Apple iOS 26 디자인 시스템 기반. SF Pro + Pretendard fallback.
+   사용:  <body data-pt-theme="ios26">
+          <link rel="stylesheet" href="/lib/themes/ios26.css">
+   ============================================================ */
+:root,
+.pt-theme-ios26 {
+  /* === System Colors (Light Mode) === */
+  --pt-color-red:     #ff383c;
+  --pt-color-orange:  #ff8d28;
+  --pt-color-yellow:  #ffcc00;
+  --pt-color-green:   #34c759;
+  --pt-color-mint:    #00c8b3;
+  --pt-color-teal:    #00c3d0;
+  --pt-color-cyan:    #00c0e8;
+  --pt-color-blue:    #0088ff;     /* Primary accent */
+  --pt-color-indigo:  #6155f5;     /* Secondary accent */
+  --pt-color-purple:  #cb30e0;
+  --pt-color-pink:    #ff2d55;
+  --pt-color-brown:   #ac7f5e;
+
+  /* === Labels === */
+  --pt-label-primary:    #000000;
+  --pt-label-secondary:  rgba(60, 60, 67, 0.78);
+  --pt-label-tertiary:   rgba(60, 60, 67, 0.5);
+  --pt-label-quaternary: rgba(60, 60, 67, 0.28);
+
+  /* === Backgrounds === */
+  --pt-bg-primary:   #ffffff;
+  --pt-bg-secondary: #f2f2f7;
+  --pt-bg-tertiary:  #e5e5ea;
+  --pt-bg-elevated:  #ffffff;
+  --pt-bg-cover:     linear-gradient(135deg, #fafafc 0%, #f0f4ff 100%);
+  --pt-bg-accent:    linear-gradient(135deg, #0088ff 0%, #6155f5 100%);
+
+  /* === Separators === */
+  --pt-separator-opaque: #c6c6c8;
+  --pt-separator:        rgba(0, 0, 0, 0.10);
+
+  /* === Liquid Glass === */
+  --pt-glass-large:        rgba(255, 255, 255, 0.78);
+  --pt-glass-medium:       rgba(255, 255, 255, 0.62);
+  --pt-glass-border:       rgba(0, 0, 0, 0.08);
+
+  /* === Semantic === */
+  --pt-accent:       var(--pt-color-blue);
+  --pt-accent-soft:  rgba(0, 136, 255, 0.10);
+  --pt-good:         var(--pt-color-green);
+  --pt-warn:         var(--pt-color-orange);
+  --pt-danger:       var(--pt-color-red);
+
+  /* === Typography === */
+  --pt-font-family: 'SF Pro Display', 'SF Pro', 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
+  --pt-font-mono:   'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+  --pt-font-display-weight: 800;
+  --pt-font-body-weight:    400;
+  --pt-letter-spacing-display: -2px;   /* 큰 H1: -2px (밀착) */
+  --pt-letter-spacing-tight:   -0.5px;
+
+  /* === Geometry === */
+  --pt-radius-sm:   8px;
+  --pt-radius-md:   14px;
+  --pt-radius-lg:   20px;
+  --pt-radius-xl:   28px;
+  --pt-radius-card: 18px;
+
+  --pt-shadow-sm:  0 2px 8px  rgba(0,0,0,0.04);
+  --pt-shadow-md:  0 4px 20px rgba(0,0,0,0.06);
+  --pt-shadow-lg:  0 12px 40px rgba(0,0,0,0.10);
+  --pt-shadow-xl:  0 24px 80px rgba(0,0,0,0.18);
+
+  /* === Gradient (em accent text) === */
+  --pt-gradient-em: linear-gradient(135deg, var(--pt-color-blue) 0%, var(--pt-color-indigo) 50%, var(--pt-color-purple) 100%);
+}
+
+/* Backwards-compat aliases (legacy --color-* variable names from old presentations) */
+.pt-theme-ios26 {
+  --color-red:    var(--pt-color-red);
+  --color-orange: var(--pt-color-orange);
+  --color-yellow: var(--pt-color-yellow);
+  --color-green:  var(--pt-color-green);
+  --color-blue:   var(--pt-color-blue);
+  --color-indigo: var(--pt-color-indigo);
+  --color-purple: var(--pt-color-purple);
+  --color-cyan:   var(--pt-color-cyan);
+  --label-primary:   var(--pt-label-primary);
+  --label-secondary: var(--pt-label-secondary);
+  --label-tertiary:  var(--pt-label-tertiary);
+  --bg-primary:   var(--pt-bg-primary);
+  --bg-secondary: var(--pt-bg-secondary);
+  --separator:    var(--pt-separator);
+  --glass-border: var(--pt-glass-border);
+  --font-family:  var(--pt-font-family);
+  --font-mono:    var(--pt-font-mono);
+}

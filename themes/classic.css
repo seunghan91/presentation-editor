@@ -1,0 +1,110 @@
+/* ============================================================
+   classic.css — Presentation Theme · Electric Blue
+   Author: 김승한 (Seunghan) · License: MIT
+   ------------------------------------------------------------
+   pipc-ai-5months 발표자료 기반. 일렉트릭 블루 (#2d2dff) +
+   Pretendard Variable + Outfit (display) + 12px radius.
+   더 강한 색감 · 더 vivid · 책같은 단단한 인상.
+   사용:  <body data-pt-theme="classic">
+          <link rel="stylesheet" href="/lib/themes/classic.css">
+   ============================================================ */
+:root,
+.pt-theme-classic {
+  /* === Brand · Electric Blue === */
+  --pt-color-blue:    #2d2dff;     /* ⚡ signature electric blue */
+  --pt-color-indigo:  #6366f1;
+  --pt-color-purple:  #8b5cf6;
+
+  --pt-color-red:     #c41a1a;     /* 진한 burgundy red */
+  --pt-color-orange:  #d97208;
+  --pt-color-yellow:  #d4a017;
+  --pt-color-green:   #0a7c42;     /* deep forest green */
+  --pt-color-cyan:    #06b6d4;
+  --pt-color-pink:    #ec4899;
+  --pt-color-warm:    #9a6e00;     /* gold accent */
+
+  /* === Labels — 더 진한 검정 (Pretendard 가독성) === */
+  --pt-label-primary:    #111118;  /* near-black, 살짝 따뜻 */
+  --pt-label-secondary:  #444450;
+  --pt-label-tertiary:   #6b6b78;
+  --pt-label-quaternary: #a0a0aa;
+
+  /* === Backgrounds === */
+  --pt-bg-primary:   #ffffff;
+  --pt-bg-secondary: #fafaf8;       /* 따뜻한 off-white */
+  --pt-bg-tertiary:  #f4f4f0;
+  --pt-bg-elevated:  #ffffff;
+  --pt-bg-cover:     linear-gradient(135deg, #ffffff 0%, #ebebff 100%);
+  --pt-bg-accent:    linear-gradient(135deg, #2d2dff 0%, #6366f1 100%);
+  --pt-bg-accent-soft: #ebebff;
+
+  /* === Separators === */
+  --pt-separator-opaque: #d4d4dc;
+  --pt-separator:        rgba(17, 17, 24, 0.10);
+
+  /* === Glass (덜 투명, 더 단단함) === */
+  --pt-glass-large:  rgba(255, 255, 255, 0.92);
+  --pt-glass-medium: rgba(255, 255, 255, 0.78);
+  --pt-glass-border: #e8e8ec;
+
+  /* === Semantic === */
+  --pt-accent:       var(--pt-color-blue);
+  --pt-accent-soft:  var(--pt-bg-accent-soft);
+  --pt-accent-hover: #1a1ae0;
+  --pt-good:         var(--pt-color-green);
+  --pt-warn:         var(--pt-color-warm);
+  --pt-danger:       var(--pt-color-red);
+
+  /* === Typography — Pretendard + Outfit === */
+  --pt-font-family: 'Pretendard Variable', 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --pt-font-display: 'Outfit', 'Pretendard Variable', sans-serif;
+  --pt-font-mono:   'SF Mono', 'JetBrains Mono', 'Cascadia Code', 'Fira Code', monospace;
+  --pt-font-display-weight: 700;       /* iOS26 보다 가벼움 */
+  --pt-font-body-weight:    400;
+  --pt-letter-spacing-display: -1.5px; /* iOS26 보다 살짝 덜 밀착 */
+  --pt-letter-spacing-tight:   -0.3px;
+
+  /* === Geometry — 12px radius (덜 둥글) === */
+  --pt-radius-sm:   6px;
+  --pt-radius-md:   12px;
+  --pt-radius-lg:   16px;
+  --pt-radius-xl:   20px;
+  --pt-radius-card: 12px;
+
+  --pt-shadow-sm:  0 1px 3px  rgba(17,17,24,0.06), 0 1px 2px rgba(17,17,24,0.04);
+  --pt-shadow-md:  0 4px 12px rgba(17,17,24,0.08), 0 2px 4px rgba(17,17,24,0.05);
+  --pt-shadow-lg:  0 8px 32px rgba(17,17,24,0.10), 0 4px 12px rgba(17,17,24,0.06);
+  --pt-shadow-xl:  0 16px 48px rgba(17,17,24,0.14);
+
+  /* === Gradient (em accent text) — 일렉트릭 블루 → 인디고 === */
+  --pt-gradient-em: linear-gradient(135deg, #2d2dff 0%, #6366f1 100%);
+}
+
+/* Display headings: Outfit + tighter tracking + bolder */
+.pt-theme-classic h1,
+.pt-theme-classic h2,
+.pt-theme-classic .em {
+  font-family: var(--pt-font-display);
+  letter-spacing: var(--pt-letter-spacing-tight);
+}
+
+/* Backwards-compat aliases (legacy var names) */
+.pt-theme-classic {
+  --color-red:    var(--pt-color-red);
+  --color-orange: var(--pt-color-orange);
+  --color-yellow: var(--pt-color-yellow);
+  --color-green:  var(--pt-color-green);
+  --color-blue:   var(--pt-color-blue);
+  --color-indigo: var(--pt-color-indigo);
+  --color-purple: var(--pt-color-purple);
+  --color-cyan:   var(--pt-color-cyan);
+  --label-primary:   var(--pt-label-primary);
+  --label-secondary: var(--pt-label-secondary);
+  --label-tertiary:  var(--pt-label-tertiary);
+  --bg-primary:   var(--pt-bg-primary);
+  --bg-secondary: var(--pt-bg-secondary);
+  --separator:    var(--pt-separator);
+  --glass-border: var(--pt-glass-border);
+  --font-family:  var(--pt-font-family);
+  --font-mono:    var(--pt-font-mono);
+}

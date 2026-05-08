@@ -4,7 +4,7 @@
 > 一行内联 `<script>` 即可激活: 文本编辑 · 图片上传 (HEIC) · 主题/字体切换 · IndexedDB 持久化。
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.2.0-brightgreen.svg)](https://github.com/seunghan91/presentation-editor)
+[![Version](https://img.shields.io/badge/version-1.2.1-brightgreen.svg)](https://github.com/seunghan91/presentation-editor)
 
 🌐 **语言**: [한국어](README.md) · [English](README.en.md) · [日本語](README.ja.md) · [中文](README.zh.md)
 
@@ -37,21 +37,21 @@
 ### 编辑工具栏 (右上,默认折叠 — 悬停展开)
 - 🎨 编辑模式 ON/OFF · 字体/内边距/宽度 ± 调整 · 比例锁定
 - 🎨 **主题**: ios26 / sunset / classic
-- 🔤 **字体对**: 6 种精选搭配
+- 🔤 **字体对**: 6 种精选搭配 (iOS Pro, Outfit·Pretendard, Inter·Noto Sans KR, Outfit·Spoqa, Gmarket Sans, Playfair·Noto Serif)
 - ➕ 添加新幻灯片 (12 种布局模板)
 - 📄 PDF (打印) / 📄 PDF 高品质 / 📱 PDF 新标签 (移动)
-- 📸 OG 图片捕获
+- 📸 OG 图片捕获 (下载 · 上传)
 - 🖼️ 16:9 ↔ 4:3 切换
 - ⛶ 全屏 (F)
 
 ### 自动文本编辑
-- `.slide-content h1/h2/p`, `.note-bar` 等点击即可立即编辑
+- `.slide-content h1/h2/p`、`.note-bar`、`.cover h1` 等点击即可立即编辑
 - 400ms 防抖自动保存 (localStorage + IndexedDB)
 - ✏️ 保存提示 toast
 
 ### 图片上传 — 4 种输入方式
 - 拖放 / 剪贴板粘贴 (Cmd+V) / URL 粘贴 / 文件选择器
-- 移动端: 摄像头捕获
+- 移动端: 摄像头捕获 (`capture="environment"`)
 - 自动压缩大文件 (Canvas 基础,最长边 1920px / JPEG 0.85)
 - **HEIC/HEIF 自动转换** — iPhone 照片拖入时动态加载 heic2any → JPEG
 
@@ -90,16 +90,70 @@
 ├── themes/
 │   ├── ios26.css                # Apple iOS 26 系统令牌
 │   └── classic.css              # Electric blue (#2d2dff)
-├── docs/demo.gif
-├── examples/
-├── README.md · README.en.md · README.ja.md · README.zh.md
+├── docs/demo.gif                # README 主图
+├── examples/                    # 自包含演示
+├── README.md (한국어)
+├── README.en.md (English)
+├── README.ja.md (日本語)
+├── README.zh.md (this file)
 ├── LICENSE                      # MIT
 └── package.json
 ```
 
 ## API (全局 `window.PresentationEditor`)
 
-API 跨语言一致。详情参见 [README.en.md](README.en.md#api-global-windowpresentationeditor)。
+```js
+PresentationEditor.version       // '1.2.1'
+PresentationEditor.theme         // 'ios26' | 'sunset' | 'classic'
+PresentationEditor.fontPair      // 当前字体对 key
+PresentationEditor.isComposing   // CJK IME 激活
+PresentationEditor.isMobile()
+
+PresentationEditor.applyTheme(name)
+PresentationEditor.applyFontPair(key)
+PresentationEditor.minimizeToolbar(state)
+PresentationEditor.tryFullscreen(el)
+PresentationEditor.openInNewTab()
+PresentationEditor.toast(msg)
+
+PresentationEditor.compressImage(file, maxDim, quality)
+PresentationEditor.convertHeic(file)
+PresentationEditor.loadImageInto(ph, file)
+
+PresentationEditor.exportPdfHighQuality(opts)
+PresentationEditor.viewPdfMobile()
+PresentationEditor.captureFirstSlide()      // 1200×630 PNG blob
+PresentationEditor.downloadOgImage()
+
+PresentationEditor.db.{
+  putImage, getImage, deleteImage,
+  putEdit, getEdit,
+  listImages, estimate,
+  migrateFromLocalStorage, restoreImages
+}
+```
+
+## 幂等性保护
+
+如果 `window.__ptEditorLoaded` 为 truthy,第二次加载立即 return。可从服务端控制器安全内联注入。
+
+## 添加主题
+
+在 `src/presentation-editor.js` 的 `THEMES` 对象中添加:
+
+```js
+mytheme: {
+  name: 'My Theme',
+  dot: '#ff00ff',
+  css: [
+    '.pt-theme-mytheme {',
+    '  --color-blue: #ff00ff;',
+    '  --pt-gradient-em: linear-gradient(135deg, #ff00ff, #00ffff);',
+    '}',
+    // ... 更多
+  ].join('\n')
+}
+```
 
 ## 许可证
 

@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Themes — presentation-editor</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css">
+<link rel="stylesheet" href="../themes/ios26.css">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { font-family: var(--pt-font-family); background: var(--pt-bg-primary); color: var(--pt-label-primary); }
+html { scroll-snap-type: y mandatory; height: 100vh; overflow-y: scroll; scroll-behavior: smooth; }
+.slide { scroll-snap-align: start; height: 100vh; width: 100vw; display: flex; align-items: center; justify-content: center; padding: 48px 64px; word-break: keep-all; position: relative; overflow: hidden; }
+.slide-content { width: 100%; max-width: 1500px; }
+.slide.featured { background: var(--pt-bg-cover); }
+.slide.accent-bg { background: var(--pt-bg-accent); color: #fff; }
+.eyebrow { font-size: 13px; letter-spacing: 1.5px; color: var(--pt-color-blue); font-weight: 600; text-transform: uppercase; }
+.cover h1 { font-size: 84px; font-weight: 800; letter-spacing: -2px; line-height: 1.15; }
+.em { background: var(--pt-gradient-em); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+.cover-sub { margin-top: 32px; font-size: 22px; color: var(--pt-label-secondary); }
+.note-bar { margin-top: 32px; padding: 18px 22px; background: var(--pt-bg-secondary); border-radius: 14px; font-size: 15px; line-height: 1.7; }
+.page-num { position: absolute; bottom: 24px; right: 32px; font-size: 12px; color: var(--pt-label-tertiary); font-family: var(--pt-font-mono); }
+</style>
+</head>
+<body data-pt-theme="ios26">
+
+<!-- 1. ios26 (default) -->
+<div class="slide featured">
+  <div class="slide-content cover">
+    <div class="eyebrow">Theme · iOS 26</div>
+    <h1>미니멀 + <span class="em">시스템 토큰</span></h1>
+    <div class="cover-sub">Apple iOS 26 시스템 컬러 + SF Pro · 차분, 정제된, 모던</div>
+    <div class="note-bar">▎ 우상단 toolbar 호버 → 🎨 테마 dot 으로 sunset / classic 시도. 페이지 reload 없이 즉시 전환.</div>
+  </div>
+  <div class="page-num">ios26 · 01 / 03</div>
+</div>
+
+<!-- 2. sunset -->
+<div class="slide featured">
+  <div class="slide-content cover">
+    <div class="eyebrow">Theme · Sunset</div>
+    <h1><span class="em">따뜻한</span> 오렌지/레드</h1>
+    <div class="cover-sub">친근, 교육·라이프스타일 · iOS 26 토큰 위에 액센트만 오렌지로 갈아끼움</div>
+    <div class="note-bar">▎ 같은 슬라이드 마크업, 다른 토큰. 디자인 sync 없음 — CSS 변수만 override.</div>
+  </div>
+  <div class="page-num">sunset · 02 / 03</div>
+</div>
+
+<!-- 3. classic -->
+<div class="slide featured">
+  <div class="slide-content cover">
+    <div class="eyebrow">Theme · Electric</div>
+    <h1>일렉트릭 <span class="em">블루 #2d2dff</span></h1>
+    <div class="cover-sub">vivid, 단단한 인상 · pipc-ai-5months 발표자료 풍 · Pretendard + Outfit</div>
+    <div class="note-bar">▎ 향후 추가 후보: warm (골드 #C8941F), report (네이비 #1a365d serif), mono (그레이 minimal). THEMES 객체에 한 항목 추가하면 자동 노출.</div>
+  </div>
+  <div class="page-num">classic · 03 / 03</div>
+</div>
+
+<script src="../src/presentation-editor.js"></script>
+<script>
+  // 데모: 5초마다 자동 테마 전환 (페이지 진입 후 한 번만)
+  if (!sessionStorage.getItem('themes-demo-done')) {
+    sessionStorage.setItem('themes-demo-done', '1');
+    setTimeout(() => window.PresentationEditor && window.PresentationEditor.applyTheme('sunset'), 3000);
+    setTimeout(() => window.PresentationEditor && window.PresentationEditor.applyTheme('classic'), 6000);
+    setTimeout(() => window.PresentationEditor && window.PresentationEditor.applyTheme('ios26'), 9000);
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Minimal — presentation-editor</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css">
+<link rel="stylesheet" href="../themes/ios26.css">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { font-family: var(--pt-font-family); background: var(--pt-bg-primary); color: var(--pt-label-primary); }
+.slide { height: 100vh; width: 100vw; display: flex; align-items: center; justify-content: center; padding: 64px; word-break: keep-all; }
+.slide-content { max-width: 1200px; text-align: center; }
+h1 { font-size: 72px; font-weight: 800; letter-spacing: -2px; line-height: 1.2; }
+p { margin-top: 24px; font-size: 22px; color: var(--pt-label-secondary); }
+.em { background: var(--pt-gradient-em); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+</style>
+</head>
+<body data-pt-theme="ios26">
+
+<div class="slide">
+  <div class="slide-content">
+    <h1>한 줄로 <span class="em">활성화</span></h1>
+    <p>이 페이지에 박힌 거: 라이브러리 1개 + 테마 CSS 1개. 우상단 호버 → 편집모드 ON → 클릭 편집.</p>
+  </div>
+</div>
+
+<script src="../src/presentation-editor.js"></script>
+</body>
+</html>

@@ -4,7 +4,7 @@
 > インライン `<script>` 1 行で起動: テキスト編集 · 画像アップロード (HEIC) · テーマ/フォント切替 · IndexedDB 永続化。
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.2.0-brightgreen.svg)](https://github.com/seunghan91/presentation-editor)
+[![Version](https://img.shields.io/badge/version-1.2.1-brightgreen.svg)](https://github.com/seunghan91/presentation-editor)
 
 🌐 **言語**: [한국어](README.md) · [English](README.en.md) · [日本語](README.ja.md) · [中文](README.zh.md)
 
@@ -37,21 +37,21 @@
 ### 編集 toolbar (右上、初期は折りたたみ — ホバーで展開)
 - 🎨 編集モード ON/OFF · フォント/パディング/幅 ± 調整 · アスペクト比固定
 - 🎨 **テーマ**: ios26 / sunset / classic
-- 🔤 **フォントペア**: 6 種類のキュレーション
+- 🔤 **フォントペア**: 6 種類のキュレーション (iOS Pro, Outfit·Pretendard, Inter·Noto Sans KR, Outfit·Spoqa, Gmarket Sans, Playfair·Noto Serif)
 - ➕ 新スライド追加 (12 レイアウトテンプレート)
 - 📄 PDF (印刷) / 📄 PDF 高品質 / 📱 PDF 新タブ (モバイル)
-- 📸 OG 画像キャプチャ
+- 📸 OG 画像キャプチャ (ダウンロード · アップロード)
 - 🖼️ 16:9 ↔ 4:3 切替
 - ⛶ フルスクリーン (F)
 
 ### 自動テキスト編集
-- `.slide-content h1/h2/p`, `.note-bar` などをクリックで即編集
-- 400ms debounce 自動保存 (localStorage + IndexedDB)
-- ✏️ 保存トースト通知
+- `.slide-content h1/h2/p`、`.note-bar`、`.cover h1` などをクリックで即編集
+- 400ms debounce 自動保存 (localStorage + IndexedDB 両方)
+- ✏️ 保存時にトースト通知
 
 ### 画像アップロード — 4 通り入力
 - ドラッグ&ドロップ / クリップボードペースト (Cmd+V) / URL ペースト / ファイルピッカー
-- モバイル: カメラキャプチャ
+- モバイル: カメラキャプチャ (`capture="environment"`)
 - 大きいファイルは自動圧縮 (Canvas 基盤、長辺 1920px / JPEG 0.85)
 - **HEIC/HEIF 自動変換** — iPhone 写真ドロップ時、heic2any を動的ロード → JPEG
 
@@ -90,16 +90,70 @@
 ├── themes/
 │   ├── ios26.css                # Apple iOS 26 システムトークン
 │   └── classic.css              # Electric blue (#2d2dff)
-├── docs/demo.gif
-├── examples/
-├── README.md (한국어) · README.en.md · README.ja.md · README.zh.md
+├── docs/demo.gif                # README ヒーロー
+├── examples/                    # 自己完結型デモ
+├── README.md (한국어)
+├── README.en.md (English)
+├── README.ja.md (this file)
+├── README.zh.md (中文)
 ├── LICENSE                      # MIT
 └── package.json
 ```
 
 ## API (グローバル `window.PresentationEditor`)
 
-API は全言語共通です。詳細は [README.en.md](README.en.md#api-global-windowpresentationeditor) を参照。
+```js
+PresentationEditor.version       // '1.2.1'
+PresentationEditor.theme         // 'ios26' | 'sunset' | 'classic'
+PresentationEditor.fontPair      // 現在のフォントペアキー
+PresentationEditor.isComposing   // CJK IME 有効
+PresentationEditor.isMobile()
+
+PresentationEditor.applyTheme(name)
+PresentationEditor.applyFontPair(key)
+PresentationEditor.minimizeToolbar(state)
+PresentationEditor.tryFullscreen(el)
+PresentationEditor.openInNewTab()
+PresentationEditor.toast(msg)
+
+PresentationEditor.compressImage(file, maxDim, quality)
+PresentationEditor.convertHeic(file)
+PresentationEditor.loadImageInto(ph, file)
+
+PresentationEditor.exportPdfHighQuality(opts)
+PresentationEditor.viewPdfMobile()
+PresentationEditor.captureFirstSlide()      // 1200×630 PNG blob
+PresentationEditor.downloadOgImage()
+
+PresentationEditor.db.{
+  putImage, getImage, deleteImage,
+  putEdit, getEdit,
+  listImages, estimate,
+  migrateFromLocalStorage, restoreImages
+}
+```
+
+## 冪等性ガード
+
+`window.__ptEditorLoaded` が truthy の場合、2 回目のロードは即座に return。サーバーサイドコントローラーから安全にインライン注入可能。
+
+## テーマ追加
+
+`src/presentation-editor.js` の `THEMES` オブジェクトに追加:
+
+```js
+mytheme: {
+  name: 'My Theme',
+  dot: '#ff00ff',
+  css: [
+    '.pt-theme-mytheme {',
+    '  --color-blue: #ff00ff;',
+    '  --pt-gradient-em: linear-gradient(135deg, #ff00ff, #00ffff);',
+    '}',
+    // ... さらに
+  ].join('\n')
+}
+```
 
 ## ライセンス
 

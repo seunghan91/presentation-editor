@@ -1,0 +1,57 @@
+name: Lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Verify JS syntax (parse-only)
+        run: node --check src/presentation-editor.js
+
+      - name: Verify package.json
+        run: node -e "JSON.parse(require('fs').readFileSync('package.json', 'utf8'))"
+
+      - name: Verify CSS syntax (basic brace match)
+        run: |
+          for f in themes/*.css; do
+            opens=$(grep -o '{' "$f" | wc -l | tr -d ' ')
+            closes=$(grep -o '}' "$f" | wc -l | tr -d ' ')
+            if [ "$opens" != "$closes" ]; then
+              echo "❌ $f: $opens opens vs $closes closes"
+              exit 1
+            fi
+            echo "✓ $f: $opens braces balanced"
+          done
+
+      - name: Verify </script> properly escapable
+        run: |
+          # Library should not contain unescaped </script> in inline-injectable content
+          # (escaping happens at injection time, but library itself should be aware)
+          if grep -n '</script>' src/presentation-editor.js | grep -v "// " | grep -v "doc"; then
+            echo "⚠️  Note: library contains </script> in docstring — must be escaped on inline inject"
+          fi
+
+      - name: Check examples HTML
+        run: |
+          for f in examples/*.html; do
+            # Basic well-formedness check
+            opens=$(grep -c '<html' "$f" || true)
+            closes=$(grep -c '</html>' "$f" || true)
+            if [ "$opens" != "$closes" ]; then
+              echo "❌ $f mismatched html tags"
+              exit 1
+            fi
+            echo "✓ $f"
+          done

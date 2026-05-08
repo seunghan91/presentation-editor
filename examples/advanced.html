@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Advanced — presentation-editor</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css">
+<link rel="stylesheet" href="../themes/ios26.css">
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { font-family: var(--pt-font-family); background: var(--pt-bg-primary); color: var(--pt-label-primary); }
+html { scroll-snap-type: y mandatory; height: 100vh; overflow-y: scroll; }
+.slide { scroll-snap-align: start; height: 100vh; width: 100vw; display: flex; align-items: center; justify-content: center; padding: 48px 64px; word-break: keep-all; position: relative; overflow: hidden; }
+.slide-content { width: 100%; max-width: 1500px; }
+.eyebrow { font-size: 13px; letter-spacing: 1.5px; color: var(--pt-color-blue); font-weight: 600; text-transform: uppercase; }
+h2 { font-size: 42px; font-weight: 700; letter-spacing: -.5px; margin: 8px 0 24px; }
+.em { background: var(--pt-gradient-em); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+.note-bar { margin-top: 28px; padding: 18px 22px; background: var(--pt-bg-secondary); border-radius: 14px; font-size: 15px; line-height: 1.7; }
+.note-label { font-weight: 700; color: var(--pt-color-blue); margin-right: 6px; }
+.page-num { position: absolute; bottom: 24px; right: 32px; font-size: 12px; color: var(--pt-label-tertiary); font-family: var(--pt-font-mono); }
+.ph-image { display: flex; align-items: center; justify-content: center; flex-direction: column; border: 2.5px dashed var(--pt-color-blue); background: rgba(0,136,255,.04); border-radius: 18px; padding: 24px; min-height: 360px; color: var(--pt-color-blue); font-size: 13px; text-align: center; cursor: pointer; }
+.mermaid-wrap { background: #fff; border: 1px solid var(--pt-glass-border); border-radius: 18px; padding: 32px; }
+.cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+.card { background: #fff; border: 1px solid var(--pt-glass-border); border-radius: 14px; padding: 22px; }
+</style>
+</head>
+<body data-pt-theme="ios26">
+
+<!-- Slide 1: 이미지 placeholder + custom selectors -->
+<div class="slide">
+  <div class="slide-content">
+    <div class="eyebrow">Advanced · Image Drop</div>
+    <h2>이미지 4-way 업로드 — <span class="em">드롭/페이스트/URL/picker</span></h2>
+    <div style="display:grid; grid-template-columns: 1fr 1fr; gap:32px; margin-top:24px">
+      <div class="ph-image">
+        📷 이미지 드롭<br>또는 클릭해서 업로드<br><br>iPhone HEIC 도 자동 변환
+      </div>
+      <div data-pt-edit style="font-size:18px; line-height:1.85; color:var(--pt-label-secondary)">
+        <strong>data-pt-edit</strong> 속성으로 이 div 도 편집 가능 (커스텀 selector 등록).<br><br>
+        Cmd+V 로 클립보드 이미지를 가장 가까운 placeholder 에 자동 삽입. URL 도 paste 가능 (CORS 허용 시).
+      </div>
+    </div>
+    <div class="note-bar"><span class="note-label">▎ 핵심</span>placeholder 클래스 .ph-image 만 박으면 4-way 업로드 + HEIC 변환 + Canvas 압축 + IDB 저장 자동.</div>
+  </div>
+  <div class="page-num">01 / 03</div>
+</div>
+
+<!-- Slide 2: mermaid 라이트박스 -->
+<div class="slide">
+  <div class="slide-content">
+    <div class="eyebrow">Advanced · Mermaid Lightbox</div>
+    <h2>다이어그램 클릭 → <span class="em">풀스크린 확대</span></h2>
+    <div class="mermaid-wrap" style="margin-top:24px">
+      <div class="mermaid">
+graph LR
+    A[사용자 입력] --> B{IME 활성?}
+    B -->|Yes| C[skip keystroke]
+    B -->|No| D[Enter 처리]
+    D --> E[insertLineBreak]
+    C --> F[compositionend 대기]
+    F --> D
+      </div>
+    </div>
+    <div class="note-bar"><span class="note-label">▎ 인터랙션</span>.mermaid-wrap 또는 [data-pt-zoom] 속성 element 위에 호버 → "⛶ 클릭하여 확대" 안내. 클릭 → 모달 (96vw × 92vh). ESC 로 닫음.</div>
+  </div>
+  <div class="page-num">02 / 03</div>
+</div>
+
+<!-- Slide 3: cards + 통계 -->
+<div class="slide">
+  <div class="slide-content">
+    <div class="eyebrow">Advanced · Cards Grid</div>
+    <h2>3-카드 레이아웃 + <span class="em">.note-bar</span></h2>
+    <div class="cards" style="margin-top:24px">
+      <div class="card">
+        <div class="eyebrow" style="font-size:11px">텍스트 편집</div>
+        <h3 style="font-size:24px; margin-top:8px">.slide-content h1/h2/p</h3>
+        <p style="font-size:14px; margin-top:8px; line-height:1.6; color:var(--pt-label-secondary)">자동 contenteditable + 400ms debounce 자동 저장. localStorage + IndexedDB 양쪽.</p>
+      </div>
+      <div class="card">
+        <div class="eyebrow" style="font-size:11px">이미지</div>
+        <h3 style="font-size:24px; margin-top:8px">.ph-image</h3>
+        <p style="font-size:14px; margin-top:8px; line-height:1.6; color:var(--pt-label-secondary)">drop / paste / URL / picker. HEIC 자동 변환 + Canvas 압축 (1920px / JPEG 0.85).</p>
+      </div>
+      <div class="card">
+        <div class="eyebrow" style="font-size:11px">다이어그램</div>
+        <h3 style="font-size:24px; margin-top:8px">.mermaid-wrap</h3>
+        <p style="font-size:14px; margin-top:8px; line-height:1.6; color:var(--pt-label-secondary)">클릭 시 라이트박스 모달. ESC 또는 외부 클릭으로 닫음.</p>
+      </div>
+    </div>
+    <div class="note-bar"><span class="note-label">▎ 다음</span>편집모드 ON → 어디든 클릭 → 즉시 편집. PDF 고품질 버튼 → jsPDF + html2canvas 동적 로드 → 시각 100%.</div>
+  </div>
+  <div class="page-num">03 / 03</div>
+</div>
+
+<!-- Custom editable selectors via global var (loaded BEFORE library) -->
+<script>
+  // 라이브러리 로드 전 정의해야 적용됨
+  window.PT_EDITABLE_SELECTORS = [
+    '.slide-content h1', '.slide-content h2', '.slide-content h3',
+    '.slide-content p', '.slide-content li',
+    '.note-bar', '.eyebrow', '.card .em',
+    '[data-pt-edit]'   // ← 명시적 opt-in
+  ];
+</script>
+
+<!-- Main library -->
+<script src="../src/presentation-editor.js"></script>
+</body>
+</html>

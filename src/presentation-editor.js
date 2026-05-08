@@ -34,9 +34,9 @@
     console.info('[presentation-editor] already loaded v' + window.__ptEditorLoaded + ', skipping');
     return;
   }
-  window.__ptEditorLoaded = '1.1.0';
+  window.__ptEditorLoaded = '1.1.1';
   window.PresentationEditor = window.PresentationEditor || {
-    version: '1.1.0',
+    version: '1.1.1',
     theme: null,
     isComposing: false
   };
@@ -122,6 +122,10 @@
     }
     window.PresentationEditor.theme = name;
     try { localStorage.setItem(THEME_STORAGE_KEY, name); } catch (_) {}
+
+    // PDF 인쇄 시 그라데이션 텍스트 fallback 색상 (테마별)
+    var pdfFallback = { ios26: '#6155f5', sunset: '#ff8d28', classic: '#2d2dff' }[name] || '#6155f5';
+    document.documentElement.style.setProperty('--print-fallback-color', pdfFallback);
 
     // inject all theme CSS once
     var styleEl = document.getElementById('pt-themes-style');
@@ -278,6 +282,7 @@
     try { initSlideQR();        } catch(e) { console.warn('[pt] slide QR', e); }
     try { initThemeSwitcher();  } catch(e) { console.warn('[pt] theme switcher', e); }
     try { initFontPicker();     } catch(e) { console.warn('[pt] font picker', e); }
+    try { initOgButton();       } catch(e) { console.warn('[pt] og button', e); }
     // Layer A/B/C — 자동 텍스트 편집 + 토스트 + 라이트박스
     try { window.PresentationEditor.setupToast();   } catch(e) { console.warn('[pt] toast', e); }
     try { window.PresentationEditor.initAutoEdit(); } catch(e) { console.warn('[pt] auto-edit', e); }
@@ -1081,10 +1086,17 @@ $ 명령어 입력
         const isBgClipText = clip === 'text';
         if (isTransparent || isBgClipText) targets.push(el);
       });
+      // 현재 테마 기반 fallback 색상 (sunset / classic / ios26)
+      const theme = (window.PresentationEditor && window.PresentationEditor.theme) || 'ios26';
+      const themeFallback = {
+        ios26:   '#6155f5',  // 인디고
+        sunset:  '#ff8d28',  // 오렌지
+        classic: '#2d2dff'   // 일렉트릭 블루
+      }[theme] || '#6155f5';
       targets.forEach(el => {
         el.dataset.printSavedStyle = el.getAttribute('style') || '';
         const onAccent = el.closest('.accent-bg');
-        const color = onAccent ? '#FFD60A' : '#6155f5';
+        const color = onAccent ? '#FFD60A' : themeFallback;
         el.style.setProperty('background', 'none', 'important');
         el.style.setProperty('background-image', 'none', 'important');
         el.style.setProperty('-webkit-background-clip', 'border-box', 'important');
@@ -2216,6 +2228,177 @@ $ 명령어 입력
   window.PresentationEditor.initAutoEdit = initAutoEdit;
   window.PresentationEditor.initLightbox = initLightbox;
   window.PresentationEditor.setupToast = setupToast;
+
+  /* ============================================================
+     OG 이미지 캡처 — 첫 슬라이드 → 1200×630 PNG
+     html2canvas 동적 로드. 다운로드 (또는 ax_admin API 자동 업로드).
+     ============================================================ */
+  var html2canvasPromise = null;
+  function loadHtml2Canvas() {
+    if (window.html2canvas) return Promise.resolve(window.html2canvas);
+    if (html2canvasPromise) return html2canvasPromise;
+    html2canvasPromise = new Promise(function (resolve, reject) {
+      var s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
+      s.onload = function () { resolve(window.html2canvas); };
+      s.onerror = function () { reject(new Error('html2canvas 로드 실패')); };
+      document.head.appendChild(s);
+    });
+    return html2canvasPromise;
+  }
+
+  async function captureFirstSlide(opts) {
+    opts = opts || {};
+    var slide = document.querySelector('.slide');
+    if (!slide) throw new Error('첫 슬라이드를 찾을 수 없음');
+
+    var html2canvas = await loadHtml2Canvas();
+
+    // 잠시 toolbar/QR/카운터/lightbox 숨김
+    var hideEls = document.querySelectorAll('#ie-toolbar, #pt-theme-switcher, #pt-font-picker, #slide-counter, .lightbox-overlay, .edit-fab, .edit-toast');
+    var savedDisplays = [];
+    hideEls.forEach(function (el) { savedDisplays.push([el, el.style.display]); el.style.display = 'none'; });
+
+    try {
+      // OG 1200x630 비율을 슬라이드 16:9 로 letterbox 처리
+      // 슬라이드 자체는 100vw × 100vh = 화면 비율. capture 후 1200x630 캔버스에 fit.
+      var canvas = await html2canvas(slide, {
+        backgroundColor: getComputedStyle(slide).backgroundColor || '#ffffff',
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        windowWidth: slide.offsetWidth,
+        windowHeight: slide.offsetHeight
+      });
+
+      // OG 사이즈로 리사이징 (1200×630, letterbox if needed)
+      var og = document.createElement('canvas');
+      og.width = 1200; og.height = 630;
+      var ctx = og.getContext('2d');
+      ctx.fillStyle = getComputedStyle(slide).backgroundColor || '#ffffff';
+      ctx.fillRect(0, 0, 1200, 630);
+
+      var srcRatio = canvas.width / canvas.height;
+      var dstRatio = 1200 / 630;
+      var dw, dh, dx, dy;
+      if (srcRatio > dstRatio) {
+        // 가로가 더 긴 source → 가로 fit, 위아래 letterbox
+        dw = 1200;
+        dh = Math.round(1200 / srcRatio);
+        dx = 0;
+        dy = Math.round((630 - dh) / 2);
+      } else {
+        // 세로가 더 긴 source → 세로 fit, 좌우 letterbox
+        dh = 630;
+        dw = Math.round(630 * srcRatio);
+        dx = Math.round((1200 - dw) / 2);
+        dy = 0;
+      }
+      ctx.drawImage(canvas, dx, dy, dw, dh);
+
+      return new Promise(function (resolve) {
+        og.toBlob(function (blob) { resolve(blob); }, 'image/png');
+      });
+    } finally {
+      savedDisplays.forEach(function (pair) { pair[0].style.display = pair[1]; });
+    }
+  }
+  window.PresentationEditor.captureFirstSlide = captureFirstSlide;
+
+  async function downloadOgImage() {
+    showToast && showToast('📸 캡처 중…');
+    try {
+      var blob = await captureFirstSlide();
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      var slug = (location.pathname.match(/\/pt\/([^\/]+)/) || [])[1] || 'slide';
+      a.href = url;
+      a.download = slug + '-og-' + new Date().toISOString().slice(0, 10) + '.png';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+      showToast && showToast('📥 OG 이미지 다운로드 완료');
+    } catch (e) {
+      console.error('[pt] OG capture failed', e);
+      showToast && showToast('⚠️ OG 캡처 실패: ' + e.message);
+    }
+  }
+
+  // ax_admin 자동 업로드 (slug 기반, cookie auth, 본인만)
+  async function uploadOgToAxAdmin() {
+    showToast && showToast('📸 캡처 중…');
+    try {
+      var blob = await captureFirstSlide();
+      var slug = (location.pathname.match(/\/pt\/([^\/]+)/) || [])[1];
+      if (!slug) throw new Error('slug 없음 (ax_admin 외 환경?)');
+
+      // ax_admin 의 PATCH /api/v1/presentations/:id 는 ID 필요 — 우선 slug 로 lookup
+      var origin = (window.location !== window.parent.location) ? document.referrer.split('/').slice(0,3).join('/') : window.location.origin;
+      // CSRF 토큰 추출
+      var csrfMeta = document.querySelector('meta[name="csrf-token"]');
+      var csrf = csrfMeta ? csrfMeta.content : '';
+      // Find ID via /api/v1/presentations
+      var listRes = await fetch(origin + '/api/v1/presentations', { credentials: 'include' });
+      if (!listRes.ok) throw new Error('인증 필요 (로그인 후 다시 시도)');
+      var list = await listRes.json();
+      var pt = (list.presentations || []).find(function (p) { return p.slug === slug; });
+      if (!pt) throw new Error('내 발표자료에 없음 (소유자만 가능)');
+
+      var fd = new FormData();
+      fd.append('thumbnail', blob, slug + '-og.png');
+      var res = await fetch(origin + '/api/v1/presentations/' + pt.id, {
+        method: 'PATCH',
+        credentials: 'include',
+        headers: { 'X-CSRF-Token': csrf, 'Accept': 'application/json' },
+        body: fd
+      });
+      if (!res.ok) throw new Error('업로드 실패 ' + res.status);
+      showToast && showToast('✅ OG 이미지 업로드 완료 — 새로고침 시 카드에 반영');
+    } catch (e) {
+      console.error('[pt] OG upload failed', e);
+      showToast && showToast('⚠️ ' + e.message);
+    }
+  }
+  window.PresentationEditor.downloadOgImage = downloadOgImage;
+  window.PresentationEditor.uploadOgToAxAdmin = uploadOgToAxAdmin;
+
+  // OG 캡처 버튼을 toolbar 에 추가
+  function initOgButton() {
+    var tb = document.getElementById('ie-toolbar');
+    if (!tb) return setTimeout(initOgButton, 50);
+    if (tb.querySelector('.pt-og-row')) return;
+
+    var row = document.createElement('div');
+    row.className = 'pt-og-row';
+    row.style.cssText = 'display:flex; gap:6px; padding:4px 0 2px; border-top:1px solid rgba(255,255,255,.10);';
+
+    var dlBtn = document.createElement('button');
+    dlBtn.type = 'button';
+    dlBtn.innerHTML = '📸 OG 다운로드';
+    dlBtn.title = '첫 슬라이드를 1200×630 PNG 로 캡처 → 로컬 다운로드';
+    dlBtn.style.cssText = 'flex:1;background:rgba(255,255,255,.10);color:#fff;border:none;padding:6px 10px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;transition:background .15s';
+    dlBtn.addEventListener('mouseenter', function () { dlBtn.style.background = 'rgba(255,255,255,.18)'; });
+    dlBtn.addEventListener('mouseleave', function () { dlBtn.style.background = 'rgba(255,255,255,.10)'; });
+    dlBtn.addEventListener('click', function (e) { e.stopPropagation(); downloadOgImage(); });
+    row.appendChild(dlBtn);
+
+    // ax_admin 환경 (axhub.space 도메인) 에서만 업로드 버튼 표시
+    if (location.hostname.indexOf('axhub') >= 0 || location.hostname.indexOf('localhost') >= 0) {
+      var upBtn = document.createElement('button');
+      upBtn.type = 'button';
+      upBtn.innerHTML = '☁️ 업로드';
+      upBtn.title = 'ax_admin 에 OG 썸네일로 업로드 (본인 발표자료만)';
+      upBtn.style.cssText = 'background:#34c759;color:#fff;border:none;padding:6px 10px;border-radius:6px;font-size:11px;font-weight:700;cursor:pointer;transition:background .15s';
+      upBtn.addEventListener('mouseenter', function () { upBtn.style.background = '#2eb150'; });
+      upBtn.addEventListener('mouseleave', function () { upBtn.style.background = '#34c759'; });
+      upBtn.addEventListener('click', function (e) { e.stopPropagation(); uploadOgToAxAdmin(); });
+      row.appendChild(upBtn);
+    }
+
+    tb.appendChild(row);
+  }
+  window.PresentationEditor.initOgButton = initOgButton;
 
   /* ============================================================
      IndexedDB layer — 이미지 + 텍스트 편집 영구 저장

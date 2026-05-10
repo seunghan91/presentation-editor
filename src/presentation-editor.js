@@ -2739,9 +2739,16 @@ $ 명령어 입력
     return 'unknown';
   }
 
-  function _peDeckSignature() {
+  // 즉시(스크립트 실행 시점) 한 번 스냅샷.
+  // 목적: localStorage 기반 initAutoEdit 가 DOM 을 변경하기 *전* 의 AS-SERVED HTML 을 캡처.
+  // 이게 없으면 사용자가 편집 → localStorage 저장 → 리로드 → initAutoEdit 가 복원 → deckId 가 매번 바뀜.
+  var _peDeckSignatureSnapshot = null;
+  function _peSnapshotDeckSignature() {
+    if (_peDeckSignatureSnapshot) return _peDeckSignatureSnapshot;
+    if (typeof document === 'undefined' || !document.querySelectorAll) return null;
     var sel = _peSel();
     var slides = document.querySelectorAll(sel);
+    if (!slides || !slides.length) return null;        // body 미파싱 → 나중에 다시 시도
     var titles = [];
     var bodyText = [];
     for (var i = 0; i < slides.length; i++) {
@@ -2749,12 +2756,44 @@ $ 명령어 입력
       bodyText.push(_peNormalize(slides[i].textContent || '').slice(0, 500));
     }
     titles.sort(); // reorder-resistant
-    return JSON.stringify({
+    _peDeckSignatureSnapshot = JSON.stringify({
       title: _peNormalize(document.title),
       slideTitles: titles,
       bodySample: bodyText.join('|').slice(0, 4000),
       generator: _peDetectGenerator(),
       slideCount: slides.length
+    });
+    return _peDeckSignatureSnapshot;
+  }
+  function _peDeckSignature() {
+    return _peSnapshotDeckSignature() || (function () {
+      // fallback: 라이브 DOM (initAutoEdit 영향 받음, sub-optimal)
+      var sel = _peSel();
+      var slides = document.querySelectorAll(sel);
+      var titles = [], bodyText = [];
+      for (var i = 0; i < slides.length; i++) {
+        titles.push(_peSlideTitle(slides[i]));
+        bodyText.push(_peNormalize(slides[i].textContent || '').slice(0, 500));
+      }
+      titles.sort();
+      return JSON.stringify({
+        title: _peNormalize(document.title),
+        slideTitles: titles,
+        bodySample: bodyText.join('|').slice(0, 4000),
+        generator: _peDetectGenerator(),
+        slideCount: slides.length
+      });
+    })();
+  }
+  // 스크립트 로드 시점에 즉시 시도. 이 시점에서 body 가 이미 파싱됐다면 snapshot 굳힘.
+  if (typeof document !== 'undefined') {
+    if (document.body) _peSnapshotDeckSignature();
+    // body 파싱 진행 중이면 readystatechange 의 'interactive' 단계 (DCL 이전) 에서 한 번 더 시도.
+    document.addEventListener('readystatechange', function _peSnap() {
+      if (document.readyState === 'interactive') {
+        _peSnapshotDeckSignature();
+        document.removeEventListener('readystatechange', _peSnap);
+      }
     });
   }
 
@@ -3325,11 +3364,17 @@ $ 명령어 입력
         } else { return; }
       } else { return; }
     }
-    // upsert deck record
-    ptDB.putDeck({
-      deckId: deckId, title: document.title, slideCount: document.querySelectorAll(_peSel()).length,
-      generatorHint: _peDetectGenerator(), deckLSH: window.PresentationEditor.deckLSH,
-      firstSeen: Date.now(), lastSeen: Date.now()
+    // upsert deck record (firstSeen preserved across runs)
+    ptDB.getDeck(deckId).then(function (existing) {
+      ptDB.putDeck({
+        deckId: deckId,
+        title: document.title,
+        slideCount: document.querySelectorAll(_peSel()).length,
+        generatorHint: _peDetectGenerator(),
+        deckLSH: window.PresentationEditor.deckLSH,
+        firstSeen: (existing && existing.firstSeen) || Date.now(),
+        lastSeen: Date.now()
+      });
     });
 
     // 4.1 Slide-level match
@@ -3355,15 +3400,27 @@ $ 명령어 입력
       usedLive.add(pair.li);
     }
 
+    var lockedSlides = [];
     for (var ss2 = 0; ss2 < stored.length; ss2++) {
       var rec = stored[ss2];
       var match = matched[ss2];
       if (!match) { orphaned.push(rec); continue; }
       var liveSlide = liveSlides[match.liveIdx];
-      // skip locked
+      // 락된 슬라이드: diff 스킵하고 사용자 편집(저장된 editedHTML)을 무조건 복원.
+      // 락은 "AI 가 다시 써도 무시하고 내 버전 유지" 의 명시적 표명이므로 다이얼로그 없이 즉시 적용.
       if (rec.locked) {
-        // locked slides 는 자동으로 사용자 편집 그대로 보존 (DOM 교체 없음)
-        // 이미 DOM 이 AI v2 라면 → 다이얼로그에 별도 표시
+        var liveBlocks = _peEnumerateBlocks(liveSlide);
+        for (var lb = 0; lb < rec.blocks.length; lb++) {
+          var sbl = rec.blocks[lb];
+          var foundLocked = _peFindBlockInSlide(liveSlide, sbl);
+          if (foundLocked && foundLocked.live.text !== sbl.editedText) {
+            _peWriting = true;
+            try { foundLocked.live.el.innerHTML = sbl.editedHTML; foundLocked.live.el.dataset.peOriginal = sbl.editedHTML; }
+            finally { setTimeout(function () { _peWriting = false; }, 50); }
+          }
+        }
+        lockedSlides.push({ slideIdx: match.liveIdx + 1, title: _peSlideTitle(liveSlide), restored: rec.blocks.length });
+        continue;
       }
       for (var bb = 0; bb < rec.blocks.length; bb++) {
         var sb = rec.blocks[bb];
@@ -3396,13 +3453,54 @@ $ 명령어 입력
         });
       }
     }
+    // Silent auto-apply: 모든 diff item 이 high 버킷 AND AI 가 원본 그대로 (재생성 안 한 단순 리로드)
+    // 이 경우 사용자 편집을 조용히 복원 + 토스트만 표시. 다이얼로그 안 띄움.
+    var allHigh = diffItems.length > 0 && diffItems.every(function (d) {
+      return d.bucket === 'high' && d.reason === 'AI-unchanged-user-edited' && d.liveEl;
+    });
+    if (allHigh) {
+      _peWriting = true;
+      try {
+        diffItems.forEach(function (d) {
+          if (!d.liveEl) return;
+          d.liveEl.innerHTML = d.block.editedHTML;
+          d.liveEl.dataset.peOriginal = d.block.editedHTML;
+        });
+      } finally {
+        setTimeout(function () { _peWriting = false; }, 50);
+      }
+      _peToast('편집 ' + diffItems.length + '개 자동 복원');
+      if (lockedSlides.length) _peToast('락 슬라이드 ' + lockedSlides.length + '개 보존', 2200);
+      return;
+    }
+    if (lockedSlides.length && !diffItems.length && !orphaned.length) {
+      _peToast('락 슬라이드 ' + lockedSlides.length + '개 자동 보존', 2000);
+      return;
+    }
     if (diffItems.length === 0 && orphaned.length === 0) return;
-    _peShowReapplyDialog(diffItems, orphaned);
+    _peShowReapplyDialog(diffItems, orphaned, lockedSlides);
+  }
+
+  // 작은 토스트 helper (기존 setupToast 와 충돌 안 하도록 별도 namespace)
+  function _peToast(msg, ttl) {
+    var t = document.getElementById('pe-regen-toast');
+    if (!t) {
+      t = document.createElement('div');
+      t.id = 'pe-regen-toast';
+      t.setAttribute('data-pe-no-export', '1');
+      t.style.cssText = 'position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:rgba(28,28,30,.92);color:#fff;padding:10px 18px;border-radius:10px;font:13px/1.4 -apple-system,system-ui,sans-serif;z-index:99998;box-shadow:0 8px 24px rgba(0,0,0,.3);transition:opacity .3s;';
+      document.body.appendChild(t);
+    }
+    t.textContent = msg;
+    t.style.opacity = '1';
+    clearTimeout(t._peTtl);
+    t._peTtl = setTimeout(function () { t.style.opacity = '0'; setTimeout(function () { if (t.parentNode) t.parentNode.removeChild(t); }, 350); }, ttl || 1800);
   }
   window.PresentationEditor.detectAndReapply = _peDetectAndReapply;
 
   // ── 5. Conflict Dialog UI ────────────────────────────────────────
-  function _peShowReapplyDialog(diffItems, orphaned) {
+  function _peShowReapplyDialog(diffItems, orphaned, lockedSlides) {
+    lockedSlides = lockedSlides || [];
     if (document.getElementById('pe-regen-dialog')) return;     // idempotent
     var bg = document.createElement('div');
     bg.id = 'pe-regen-dialog';
@@ -3419,13 +3517,14 @@ $ 명령어 입력
       '<h2 style="margin:0 0 6px;font-size:20px;font-weight:700;">편집 다시 적용?</h2>' +
       '<p style="margin:0 0 16px;color:#555;font-size:13px;">이 deck 의 이전 편집 ' + diffItems.length + '개 발견. 새 AI 버전에 다시 적용하시겠습니까?</p>' +
       '<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">' +
-        '<button id="pe-apply-high" style="background:#0a84ff;color:#fff;border:none;padding:8px 14px;border-radius:8px;font-weight:600;cursor:pointer;font-size:13px;">신뢰도 높음만 적용 (' + counts.high + ')</button>' +
+        '<button id="pe-apply-high" ' + (counts.high === 0 ? 'disabled' : '') + ' style="background:' + (counts.high === 0 ? '#c7c7cc' : '#0a84ff') + ';color:#fff;border:none;padding:8px 14px;border-radius:8px;font-weight:600;cursor:' + (counts.high === 0 ? 'not-allowed' : 'pointer') + ';font-size:13px;">신뢰도 높음만 적용 (' + counts.high + ')</button>' +
         '<button id="pe-apply-all" style="background:#34c759;color:#fff;border:none;padding:8px 14px;border-radius:8px;font-weight:600;cursor:pointer;font-size:13px;">선택한 항목 적용</button>' +
         '<button id="pe-discard" style="background:#f2f2f7;color:#1a1a1a;border:none;padding:8px 14px;border-radius:8px;font-weight:600;cursor:pointer;font-size:13px;">전체 무시</button>' +
         '<button id="pe-cancel" style="margin-left:auto;background:transparent;border:none;color:#888;cursor:pointer;font-size:13px;">닫기</button>' +
       '</div>' +
       '<div id="pe-diff-list" style="display:flex;flex-direction:column;gap:10px;"></div>' +
-      (orphaned.length ? '<div style="margin-top:18px;padding-top:14px;border-top:1px solid #eee;color:#888;font-size:12px;">고아 편집 ' + orphaned.length + '개 (해당 슬라이드가 새 버전에 없음). 다이얼로그 닫으면 보존됨.</div>' : '');
+      (lockedSlides.length ? '<div style="margin-top:14px;padding:10px 12px;background:#eef2ff;border-radius:8px;color:#3730a3;font-size:12px;">🔒 락 슬라이드 ' + lockedSlides.length + '개 자동 보존: ' + lockedSlides.map(function(l){return '#'+l.slideIdx+(l.title?' "'+l.title.slice(0,30)+'"':'');}).join(', ') + '</div>' : '') +
+      (orphaned.length ? '<div style="margin-top:14px;padding-top:14px;border-top:1px solid #eee;color:#888;font-size:12px;">고아 편집 ' + orphaned.length + '개 (해당 슬라이드가 새 버전에 없음). 다이얼로그 닫으면 보존됨.</div>' : '');
 
     var list = modal.querySelector ? null : null;
     bg.appendChild(modal);
@@ -3469,7 +3568,8 @@ $ 명령어 입력
       bg.remove();
     }
 
-    document.getElementById('pe-apply-high').onclick = function () { applyDiffs(function (d) { return d.bucket === 'high'; }); };
+    var btnHigh = document.getElementById('pe-apply-high');
+    if (counts.high > 0) btnHigh.onclick = function () { applyDiffs(function (d) { return d.bucket === 'high'; }); };
     document.getElementById('pe-apply-all').onclick = function () {
       applyDiffs(function (d, idx) {
         var cb = list.querySelector('input[data-pe-idx="' + idx + '"]');

@@ -5,6 +5,68 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] — 2026-05-11
+
+> **Pivot release.** Library now positioned as a *post-edit layer for AI-generated HTML decks* (frontend-slides, html-slides, slides-ai-plugin, reveal.js, Marp, vanilla). iOS 26 theme demoted to optional default. Codex strategy review + 2 parallel agent design + browser-verified end-to-end.
+
+### Added — Phase 1A: content-hash deck identity
+- `PresentationEditor.deckId` — `d_xxxxxxxxxxxx` hash of normalized deck signature (title + sorted slide titles + body sample + generator hint + slide count). URL-independent — survives copy / re-export / pathname changes.
+- `PresentationEditor.deckLSH` — 4-band × 8-row MinHash signature for fuzzy deck matching across regenerations (catches reordered/inserted slides).
+- `pe:deck-identified` event fires once per load with `{ deckId, deckLSH }`.
+- Synchronous deck signature snapshot at script load (or `readystatechange='interactive'`) — captured *before* `initAutoEdit` mutates DOM, ensuring deckId stable across edit-reload cycles.
+
+### Added — Phase 1B: theme-agnostic core
+- `PresentationEditor.init({ slideSelector, theme, autoDetect, regen })` — public API for explicit configuration.
+- Slide selector auto-detection: `section.slide` → `.reveal .slides > section` → `section[data-marpit-svg]` → `.slide` (legacy). 4 generator shapes covered out-of-box.
+- 5 hardcoded `.slide` callsites refactored to use `_peSel()` accessor.
+- Backward-compatible: existing `<div class="slide">` examples unchanged.
+
+### Added — Phase 3: regen-safe edit memory
+- IndexedDB v2 migration: + `decks`, `slides`, `blobs` stores. Existing `images`, `edits` (v1) untouched.
+- `slideFingerprint` algorithm: SHA-1 hashed normalized title + 5-shingle hashes of body + structural skeleton + DOM path. Composite scoring `0.40·title + 0.35·jaccard + 0.15·skel + 0.10·dom`.
+- Editable-block enumeration: `h1-h6`, `p`, `li`, `td`, `th`, `figcaption`, `blockquote`, `pre`, `summary`, `dt`, `dd`. Leaf-only (no nested blocks). `data-pe-block` / `data-pe-no-edit` overrides.
+- MutationObserver-based edit capture, 800ms debounce, loop-guarded via `_peWriting` flag.
+- Detect-and-reapply on load: greedy slide assignment → 3-way diff (AI v1 / user / AI v2) → confidence buckets (high>0.85 / medium 0.5-0.85 / low<0.5).
+- **Conflict dialog UI**: per-block checkboxes, side-by-side diff, "신뢰도 높음만 적용" / "선택한 항목 적용" / "전체 무시" actions. Locked slides shown separately as auto-preserved.
+- **Silent auto-apply**: when all diffs are HIGH+`AI-unchanged-user-edited` (plain reload, no AI regen), edits silently restored with toast — no dialog.
+- **LSH fuzzy fallback**: on strict `deckId` miss, query by MinHash band overlap; if Jaccard ≥0.5, prompt user "Looks like a regenerated version of '...'. Apply your saved edits?" → confirm → rebind.
+- **Slide lock**: `PresentationEditor.lockSlide(el, true)` writes `data-pe-locked` attribute. Locked slides skip the diff entirely and force-restore stored content. HTML comment marker (`<!-- pe:locked v1 hash=... -->`) inserted by `exportClean` for external regenerator protocol.
+- `PresentationEditor.detectAndReapply()` — manual trigger. Default fires automatically after `pe:deck-identified`.
+- Toast helper `_peToast` (separate namespace from existing `setupToast`).
+- `db.putDeck` preserves `firstSeen` across runs; only `lastSeen` updates.
+
+### Added — Phase 4: clean export
+- `PresentationEditor.exportClean({ download, filename, inlineBlobs })` — returns `{ html, blob, blobs }` with all editor pollution stripped.
+- Strips: toolbar / modals / counter / regen-dialog / regen-toast / OG buttons / our `<script>` / `data-pe-original` / `data-pt-auto-edit` / our `contenteditable="true"` / 6 named `<style>` blocks (`pt-editor-styles`, `pt-placeholder-styles`, `pt-print-styles`, etc.).
+- Preserves: user edits, `data-pe-locked` markers, `data-pe-block` overrides, user-authored `contenteditable="false"`, theme tokens.
+- Inlines `blob:` URL images to `data:` URIs from IDB. Idempotent — re-import → re-export = identical.
+- Lock comment markers inserted around `data-pe-locked="true"` sections for downstream regenerator protocol.
+
+### Added — Compatibility examples
+- `examples/compat-frontend-slides.html` — frontend-slides shape (section.slide, viewport-fit, .reveal animation classes). Verifies auto-detect + edit capture + dialog flow.
+- `examples/compat-other-deck.html` — totally different deck for false-positive verification.
+
+### Added — Documentation
+- `docs/REGEN-PRESERVATION.md` — 1900-word design doc with 10 sections (slide identity, storage schema, deck identity, diff/match algorithm, conflict UX, edit boundary detection, lock protocol, clean export, MutationObserver strategy, failure modes). Reviewed by Codex + Plan agent.
+
+### Changed
+- README rewritten around AI-deck post-edit positioning. Compat matrix added.
+- iOS 26 theme: from "primary identity" to "optional default theme". Library core fully theme-agnostic.
+- Internal versioning: `__ptEditorLoaded` and `PresentationEditor.version` bumped to `1.3.0`.
+
+### Verified end-to-end (Chrome DevTools MCP)
+- frontend-slides shape detected, slides counted, deckId stable across reloads.
+- Edit captured to IDB, silent auto-apply on reload (no dialog spam).
+- Simulated AI v2 → dialog rendered with MEDIUM 75% bucket.
+- Apply restored user's edited HTML to DOM.
+- Lock slide → AI overwrite → locked content force-restored, "락 슬라이드 N개 자동 보존" toast.
+- Different deck loaded → no false-positive dialog.
+- exportClean output: 13KB → 7KB (46% reduction), zero editor pollution, lock markers preserved.
+- Zero console errors throughout.
+
+### Internal
+- Source grew 2805 → 3613 LOC (+808 / -22). Single file, zero deps maintained.
+
 ## [1.2.1] — 2026-05-08
 
 ### Fixed

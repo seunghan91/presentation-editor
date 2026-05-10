@@ -1,11 +1,12 @@
 {
   "name": "@beast2025/presentation-editor",
-  "version": "1.2.1",
-  "description": "Vanilla JS in-browser editor for static HTML presentations. Slide builder, theme/font picker, image upload (HEIC), IndexedDB persistence.",
+  "version": "1.3.0",
+  "description": "Post-edit layer for AI-generated HTML decks. Inline editing + IndexedDB persistence + regen-safe edit memory. Works with frontend-slides, html-slides, reveal.js, Marp, vanilla.",
   "main": "src/presentation-editor.js",
   "files": [
     "src/",
     "themes/",
+    "docs/REGEN-PRESERVATION.md",
     "README.md",
     "LICENSE"
   ],
@@ -17,6 +18,11 @@
     "vanilla-js",
     "contenteditable",
     "indexeddb",
+    "ai-slides",
+    "regen-safe",
+    "frontend-slides",
+    "reveal-js",
+    "marp",
     "heic",
     "korean"
   ],

@@ -1,159 +1,153 @@
 # Presentation Editor
 
-> Vanilla JS library for in-browser editing of static HTML presentations.
-> One inline `<script>` line activates: text editing · image upload (HEIC) · theme/font switcher · IndexedDB persistence.
+> **A Vanilla JS layer that adds inline editing, persistent storage, and regen-safe edit memory to any AI-generated HTML deck.**
+> One `<script>` tag. Any deck, any theme, any generator.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.2.0-brightgreen.svg)](https://github.com/seunghan91/presentation-editor)
+[![Version](https://img.shields.io/badge/version-1.3.0-brightgreen.svg)](https://github.com/seunghan91/presentation-editor)
 
 🌐 **Languages**: [한국어](README.md) · [English](README.en.md) · [日本語](README.ja.md) · [中文](README.zh.md)
 
 ![Demo](docs/demo.gif)
 
-## What it does
+## What's different
 
-Drop a `<script>` tag into any pre-built HTML presentation and instantly get an **editor toolbar, theme switcher, font picker, image uploader, and PDF exporter**. No React, no Vue, no build pipeline — works on any static HTML.
+If you've used any AI HTML deck generator (frontend-slides, html-slides, slides-ai-plugin, NotebookLM), you've felt this pain:
 
-## Usage
+> *"I want to fix one word, but if I re-prompt the AI, the entire deck gets regenerated and my edits are gone."*
+
+This library sits between the generator and you. **User edits are persisted to IndexedDB**, and when the AI regenerates the deck, a **confidence-scored, suggestion-based dialog** lets you re-apply them block by block. Not auto-merge — *suggestion-based*.
+
+## Compatibility matrix
+
+| Generator | Slide selector | Auto-detect | Verified |
+|---|---|---|---|
+| [zarazhangrui/frontend-slides](https://github.com/zarazhangrui/frontend-slides) | `section.slide` | ✓ | yes |
+| [bluedusk/html-slides](https://github.com/bluedusk/html-slides) | `section.slide` | ✓ | yes |
+| [proyecto26/slides-ai-plugin](https://github.com/proyecto26/slides-ai-plugin) | `section.slide` | ✓ | yes |
+| [reveal.js](https://github.com/hakimel/reveal.js) | `.reveal .slides > section` | ✓ | yes |
+| [Marp](https://marp.app) HTML export | `section[data-marpit-svg]` | ✓ | yes |
+| Vanilla `<div class="slide">` | `.slide` | ✓ | yes |
+
+## Quick start — one CDN line
+
+Drop into any HTML deck just before `</body>`.
 
 ```html
-<body data-pt-theme="ios26">
-  <link rel="stylesheet" href="./themes/ios26.css">
-
-  <div class="slide">...</div>
-  <div class="slide">...</div>
-
-  <!-- Optional: QR · mermaid -->
-  <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
-
-  <!-- Main library -->
-  <script src="./src/presentation-editor.js"></script>
-</body>
+<script src="https://cdn.jsdelivr.net/npm/@beast2025/presentation-editor@latest/src/presentation-editor.js"></script>
 ```
 
-## Features
+Or via npm:
+```bash
+npm install @beast2025/presentation-editor
+```
 
-### Editor toolbar (top-right, starts collapsed — hover to expand)
-- 🎨 Edit mode ON/OFF · font/padding/width ± · aspect lock
-- 🎨 **Themes**: ios26 / sunset / classic
-- 🔤 **Font pairs**: 6 curated (iOS Pro, Outfit·Pretendard, Inter·Noto Sans KR, Outfit·Spoqa, Gmarket Sans, Playfair·Noto Serif)
-- ➕ Add new slide (12 layout templates)
-- 📄 PDF (print) / 📄 PDF high-quality / 📱 PDF new tab (mobile)
-- 📸 OG image capture (download · upload)
-- 🖼️ 16:9 ↔ 4:3 toggle
-- ⛶ Fullscreen (F)
+[![npm](https://img.shields.io/npm/v/@beast2025/presentation-editor.svg?color=cb3837)](https://www.npmjs.com/package/@beast2025/presentation-editor)
+[![jsDelivr](https://data.jsdelivr.com/v1/package/npm/@beast2025/presentation-editor/badge)](https://www.jsdelivr.com/package/npm/@beast2025/presentation-editor)
 
-### Auto text editing
-- `.slide-content h1/h2/p`, `.note-bar`, `.cover h1` etc. become editable on click
-- 400ms debounced auto-save (localStorage + IndexedDB)
-- ✏️ Toast notifications on save
+The library will automatically:
+1. Detect the slide selector (`section.slide` → `.reveal .slides > section` → `section[data-marpit-svg]` → `.slide`)
+2. Compute a content-hash deckId (URL-independent, survives copy / re-export)
+3. If prior edits exist, show the confidence-bucketed re-apply dialog
 
-### Image upload — 4-way input
-- Drag-drop / clipboard paste (Cmd+V) / URL paste / file picker
-- Mobile: camera capture (`capture="environment"`)
-- Auto-compress large files (Canvas-based, longest edge 1920px / JPEG 0.85)
-- **HEIC/HEIF auto-conversion** — drop iPhone photos, heic2any loads on demand → JPEG
+## Core features
 
-### IndexedDB persistence
-- Images + text edits stored permanently (bypass localStorage 5MB limit)
-- Auto-migration from localStorage
-- Per-page isolation via `location.pathname`
+### 🔄 Regen-safe edit memory (Phase 3)
 
-### CJK / Korean support
-- IME composition guard (`compositionstart/end` + `e.isComposing` + `keyCode 229`)
-- Skip keystrokes during Hangul composition → no last-syllable corruption
+```
+User edit → MutationObserver capture → IndexedDB persist
+                                          ↓
+                            AI regenerates deck (HTML file replaced)
+                                          ↓
+Page load → deckId computed → diff against stored edits
+                                          ↓
+                        ├─ HIGH (>0.85): silent auto-apply + toast
+                        ├─ MEDIUM (0.5-0.85): dialog (checked by default)
+                        └─ LOW (<0.5): dialog (unchecked, "uncertain")
+```
 
-### Mobile PDF viewer
-- Auto-shows floating banner on mobile devices
-- "Open as PDF" → jsPDF + html2canvas dynamic load → new tab PDF viewer
-- Native mobile PDF viewers handle landscape rotation + pinch-zoom
+Three-way diff (AI v1 / user / AI v2) shown per slide and per block.
+
+**Slide lock**: `PresentationEditor.lockSlide(el, true)` forces user version on regen. HTML comment markers (`<!-- pe:locked v1 hash=... -->`) survive in clean export so external regenerators can read the signal.
+
+### Inline editing
+
+- Auto-contenteditable for `<h1/h2/h3/p/li/td>` and other text blocks
+- 800ms debounced auto-save to IndexedDB
+- CJK / Korean IME safe
+
+### Clean export
+
+```js
+const { html, blob } = await PresentationEditor.exportClean({ download: true });
+```
+
+All editor pollution stripped. Images inlined as `data:` URIs. Lock markers preserved. Idempotent.
+
+### 4-way image upload + HEIC
+
+Drag-drop / clipboard paste / URL paste / file picker. iPhone HEIC/HEIF auto-converted. Persisted to IndexedDB.
 
 ### PDF export — 3-tier
-| Mode | Engine | File size | Visual fidelity |
+
+| Mode | Engine | Size | Fidelity |
 |---|---|---|---|
-| 📄 Print | `window.print()` | 5-10MB | Gradient fallback |
-| 📄 High-quality | jsPDF + html2canvas (200KB lazy load) | 15-25MB | 100% (raster) |
-| 📱 Mobile | Same engine + blob URL | Same | Same (opens in new tab) |
+| 📄 Print | `window.print()` | 5-10MB | gradient fallback |
+| 📄 High-quality | jsPDF + html2canvas | 15-25MB | 100% raster |
+| 📱 Mobile | Same + blob URL | Same | New tab |
+
+### iOS 26 default theme (optional)
+
+If your generator brings its own theme, it's preserved. For decks without a theme, optionally:
+
+```html
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@beast2025/presentation-editor@latest/themes/ios26.css">
+<body data-pt-theme="ios26">
+```
+
+Library core is theme-agnostic.
+
+## Explicit init (optional)
+
+```js
+PresentationEditor.init({
+  slideSelector: '.my-custom-slide',
+  theme: 'ios26',
+  autoDetect: true,
+  regen: { enabled: true }
+});
+```
+
+## API (`window.PresentationEditor`)
+
+```js
+PresentationEditor.version          // '1.3.0'
+PresentationEditor.deckId           // 'd_a1b2c3d4e5f6'
+PresentationEditor.deckLSH
+PresentationEditor.config
+
+PresentationEditor.init(opts)
+PresentationEditor.detectAndReapply()
+PresentationEditor.lockSlide(sectionEl, true|false)
+PresentationEditor.exportClean({ download, filename, inlineBlobs })
+PresentationEditor.exportPdfHighQuality(opts)
+
+PresentationEditor.db.{
+  putImage, getImage, deleteImage, putEdit, getEdit,    // v1
+  putDeck, getDeck, listDecks,                          // v2
+  putSlideEdit, getSlideEditsForDeck, deleteSlideEdit   // v2
+}
+
+window.addEventListener('pe:deck-identified', e => {
+  console.log(e.detail.deckId, e.detail.deckLSH);
+});
+```
 
 ## Dependencies
 
-- Core: **0** (zero deps)
-- Optional (CDN, on-demand): `mermaid`, `qrcode-generator`
-- Lazy-loaded only when used: `heic2any@0.0.4`, `html2canvas@1.4.1`, `jspdf@2.5.1`
-
-## Repo layout
-
-```
-~/presentation-editor/
-├── src/presentation-editor.js   # Main library (~110KB)
-├── themes/
-│   ├── ios26.css                # Apple iOS 26 system tokens
-│   └── classic.css              # Electric blue (#2d2dff)
-├── docs/demo.gif                # README hero
-├── examples/                    # Self-contained demos
-├── README.md                    # Korean (default)
-├── README.en.md                 # English (this file)
-├── README.ja.md                 # Japanese
-├── README.zh.md                 # Chinese
-├── LICENSE                      # MIT
-└── package.json
-```
-
-## API (global `window.PresentationEditor`)
-
-```js
-PresentationEditor.version       // '1.2.0'
-PresentationEditor.theme         // 'ios26' | 'sunset' | 'classic'
-PresentationEditor.fontPair      // current font pair key
-PresentationEditor.isComposing   // CJK IME active
-PresentationEditor.isMobile()
-
-PresentationEditor.applyTheme(name)
-PresentationEditor.applyFontPair(key)
-PresentationEditor.minimizeToolbar(state)
-PresentationEditor.tryFullscreen(el)
-PresentationEditor.openInNewTab()
-PresentationEditor.toast(msg)
-
-PresentationEditor.compressImage(file, maxDim, quality)
-PresentationEditor.convertHeic(file)
-PresentationEditor.loadImageInto(ph, file)
-
-PresentationEditor.exportPdfHighQuality(opts)
-PresentationEditor.viewPdfMobile()
-PresentationEditor.captureFirstSlide()      // 1200×630 PNG blob
-PresentationEditor.downloadOgImage()
-
-PresentationEditor.db.{
-  putImage, getImage, deleteImage,
-  putEdit, getEdit,
-  listImages, estimate,
-  migrateFromLocalStorage, restoreImages
-}
-```
-
-## Idempotency
-
-If `window.__ptEditorLoaded` is truthy, second load returns immediately. Safe to inline-inject from a server-side controller.
-
-## Adding a theme
-
-In `src/presentation-editor.js`, add to the `THEMES` object:
-
-```js
-mytheme: {
-  name: 'My Theme',
-  dot: '#ff00ff',
-  css: [
-    '.pt-theme-mytheme {',
-    '  --color-blue: #ff00ff;',
-    '  --pt-gradient-em: linear-gradient(135deg, #ff00ff, #00ffff);',
-    '}',
-    // ... more
-  ].join('\n')
-}
-```
+- Core: **0**
+- Optional CDN (on-demand): `mermaid`, `qrcode-generator`
+- Dynamic (used only on demand): `heic2any@0.0.4`, `html2canvas@1.4.1`, `jspdf@2.5.1`
 
 ## License
 
@@ -161,7 +155,7 @@ MIT — see `LICENSE`.
 
 ## Author
 
-**김승한 (Seunghan)** · [@seunghan91](https://github.com/seunghan91)
+**Seunghan Kim (김승한)** · [@seunghan91](https://github.com/seunghan91)
 
 ## Changelog
 
@@ -169,4 +163,4 @@ See [CHANGELOG.md](CHANGELOG.md).
 
 ## Contributing
 
-Issues and PRs welcome.
+Issues and PRs welcome. New AI deck generator adapters especially welcome.

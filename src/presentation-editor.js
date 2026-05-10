@@ -34,9 +34,9 @@
     console.info('[presentation-editor] already loaded v' + window.__ptEditorLoaded + ', skipping');
     return;
   }
-  window.__ptEditorLoaded = '1.2.1';
+  window.__ptEditorLoaded = '1.3.0';
   window.PresentationEditor = window.PresentationEditor || {
-    version: '1.2.1',
+    version: '1.3.0',
     theme: null,
     isComposing: false,
     deckId: null,        // §3 Regen-Preservation — content-hash deck identity (async, set by computeDeckId)
@@ -634,6 +634,7 @@
      ------------------------------------------------------------ */
   function initPlaceholders() {
     const phStyle = document.createElement('style');
+    phStyle.id = 'pt-placeholder-styles';
     phStyle.textContent = `
       .ph-image, .ph-text {
         border: 2px dashed rgba(0,136,255,0.5);
@@ -1192,6 +1193,7 @@ $ 명령어 입력
 
     // ⚠ width 는 initAspectToggle 에서 body class 기반으로 동적 적용 (16:9 = 1920px / 4:3 = 1440px)
     const printStyle = document.createElement('style');
+    printStyle.id = 'pt-print-styles';
     printStyle.textContent = `
       @media print {
         html, body {
@@ -3590,6 +3592,125 @@ $ 명령어 입력
       .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
+
+  /* ============================================================
+     Phase 4: Clean Export
+     ------------------------------------------------------------
+     설계 문서: docs/REGEN-PRESERVATION.md §8
+     PresentationEditor.exportClean({ inlineBlobs, download, filename })
+       → Promise<{ html, blob, blobs }> — editor 오염 제거된 HTML.
+     멱등: 재import → 재export = 동일 결과 (modulo 락 timestamp).
+     ============================================================ */
+  var PE_STRIP_SELECTORS = [
+    '#ie-toolbar', '#slide-builder-modal', '#slide-counter',
+    '#pt-theme-switcher', '#pt-fontmenu', '.edit-fab', '#i-fontmenu',
+    '#pe-regen-dialog', '#pe-regen-toast',
+    '[data-pe-no-export]',
+    'style#ie-aspect-style', 'style#ie-print-style', 'style#pt-theme-style', 'style#pt-print-style',
+    'style#pt-editor-styles', 'style#pt-placeholder-styles', 'style#pt-print-styles',
+    '.slide-qr-modal'
+  ];
+  var PE_STRIP_ATTRS = ['data-pe-original', 'data-pt-auto-edit', 'data-edit-id', 'data-ie-edit-temp', 'data-ph-active'];
+  // contenteditable 은 우리가 추가한 경우만 제거 (data-pt-auto-edit 가 있던 element).
+
+  function _peBlobToDataURL(blob) {
+    return new Promise(function (res, rej) {
+      var fr = new FileReader();
+      fr.onload = function () { res(fr.result); };
+      fr.onerror = rej;
+      fr.readAsDataURL(blob);
+    });
+  }
+
+  async function _peExportClean(opts) {
+    opts = opts || {};
+    var clone = document.documentElement.cloneNode(true);
+
+    // 1. DOM 제거
+    PE_STRIP_SELECTORS.forEach(function (sel) {
+      clone.querySelectorAll(sel).forEach(function (el) { el.remove(); });
+    });
+
+    // 2. 우리 라이브러리 <script> 태그 제거
+    clone.querySelectorAll('script').forEach(function (s) {
+      var src = s.getAttribute('src') || '';
+      if (src.indexOf('presentation-editor') >= 0) s.remove();
+    });
+
+    // 3. contenteditable 제거 — 우리가 추가한 모든 케이스 (true / "" / plaintext-only / inherited 무관)
+    clone.querySelectorAll('[contenteditable]').forEach(function (el) {
+      // data-pt-auto-edit 마커가 있던 요소이거나 미리 사용자가 contenteditable 박은 게 아닌 경우 제거
+      if (el.hasAttribute('data-pt-auto-edit') || el.hasAttribute('data-edit-id') || el.hasAttribute('data-ie-edit-temp')) {
+        el.removeAttribute('contenteditable');
+      } else {
+        // 사용자가 직접 contenteditable 을 박은 경우는 보존
+      }
+    });
+
+    // 4. 모든 element 의 strip 속성 정리. clone (html element) 자체도 포함.
+    var allEls = Array.prototype.slice.call(clone.querySelectorAll('*'));
+    allEls.push(clone);
+    if (clone.querySelector) {
+      var bodyEl = clone.querySelector('body'); if (bodyEl) allEls.push(bodyEl);
+    }
+    allEls.forEach(function (el) {
+      PE_STRIP_ATTRS.forEach(function (a) { el.removeAttribute && el.removeAttribute(a); });
+      ['ie-selected', 'dragover', 'pe-applying'].forEach(function (c) { el.classList && el.classList.remove(c); });
+    });
+
+    // 5. data-pe-locked / data-pe-locked-at / data-pe-block 은 보존 (의도된 사용자 시그널)
+    //    추가로 락 슬라이드에 HTML 코멘트 보호 마커 삽입 (regenerator protocol).
+    clone.querySelectorAll('[data-pe-locked="true"]').forEach(function (sec) {
+      var hash = _peHash32((sec.textContent || '').trim().slice(0, 200));
+      var openMark = document.createComment(' pe:locked v1 hash=' + hash + ' ');
+      var closeMark = document.createComment(' /pe:locked ');
+      // 같은 마커가 이미 있으면 중복 삽입 안 함
+      var prev = sec.previousSibling;
+      var hasPrev = prev && prev.nodeType === 8 && /pe:locked v1/.test(prev.textContent);
+      var nextN = sec.nextSibling;
+      var hasNext = nextN && nextN.nodeType === 8 && /\/pe:locked/.test(nextN.textContent);
+      if (!hasPrev && sec.parentNode) sec.parentNode.insertBefore(openMark, sec);
+      if (!hasNext && sec.parentNode) sec.parentNode.insertBefore(closeMark, sec.nextSibling);
+    });
+
+    // 6. 이미지 inline (blob: → data:URI). opts.inlineBlobs !== false 가 default.
+    var blobsMap = {};
+    if (opts.inlineBlobs !== false) {
+      var imgs = clone.querySelectorAll('img');
+      for (var i = 0; i < imgs.length; i++) {
+        var img = imgs[i];
+        var src = img.getAttribute('src') || '';
+        if (src.indexOf('blob:') !== 0 && src.indexOf('data:') !== 0) continue;
+        if (src.indexOf('data:') === 0) continue;            // already inlined
+        // blob URL 의 원본 blob 을 IDB 에서 찾아서 data:URI 로 변환
+        var ph = img.closest && img.closest('.ph-image[data-ph-id]');
+        if (!ph) { img.setAttribute('src', ''); continue; }   // blob URL 만 있고 IDB 추적 불가 → skip
+        var phId = ph.getAttribute('data-ph-id');
+        try {
+          var rec = await ptDB.getImage(phId);
+          if (rec && rec.blob) {
+            var dataUrl = await _peBlobToDataURL(rec.blob);
+            img.setAttribute('src', dataUrl);
+          }
+        } catch (e) { /* skip on IDB fail */ }
+      }
+    }
+
+    var html = '<!DOCTYPE html>\n' + clone.outerHTML;
+    var blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+
+    if (opts.download) {
+      var ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      var base = opts.filename || ((location.pathname.split('/').pop() || 'slides').replace(/\.html?$/, '') + '__clean__' + ts);
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a');
+      a.href = url; a.download = base + (base.endsWith('.html') ? '' : '.html'); a.click();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+    }
+
+    return { html: html, blob: blob, blobs: blobsMap };
+  }
+  window.PresentationEditor.exportClean = _peExportClean;
 
   // Phase 1A+1B: config 자동 감지 + deckId 계산 (DOM 안정 후 1회).
   // 사용자가 명시적으로 PresentationEditor.init({...}) 를 먼저 부르면 그 값이 우선됨.

@@ -38,8 +38,59 @@
   window.PresentationEditor = window.PresentationEditor || {
     version: '1.2.1',
     theme: null,
-    isComposing: false
+    isComposing: false,
+    deckId: null,        // §3 Regen-Preservation — content-hash deck identity (async, set by computeDeckId)
+    deckLSH: null,       // MinHash band signature for fuzzy deck match across regenerations
+    config: null         // Phase 1B — set by autodetect or PresentationEditor.init({...})
   };
+
+  // ── Phase 1B: theme-agnostic core config ─────────────────────────────
+  // 자동 감지 우선순위: section.slide → reveal.js → marp → legacy .slide.
+  // 사용자 override: PresentationEditor.init({ slideSelector: '...' }).
+  function _peAutoDetectSelector() {
+    var candidates = [
+      'section.slide',                // frontend-slides, html-slides, slides-ai-plugin
+      '.reveal .slides > section',    // reveal.js
+      'section[data-marpit-svg], section[data-marpit-fragments]', // Marp
+      '.slide'                        // legacy / our own examples
+    ];
+    for (var i = 0; i < candidates.length; i++) {
+      try {
+        if (document.querySelector(candidates[i])) return candidates[i];
+      } catch (_) {}
+    }
+    return '.slide';
+  }
+
+  function _peDefaultConfig() {
+    return {
+      slideSelector: _peAutoDetectSelector(),
+      theme: null,                    // null = let detectTheme() pick from data-pt-theme attr
+      autoDetect: true,
+      regen: { enabled: true }        // Phase 3 토글
+    };
+  }
+
+  // Public init API. Idempotent — can be called pre or post DOMContentLoaded.
+  // Merges over auto-detected defaults; never wipes prior config.
+  window.PresentationEditor.init = function (opts) {
+    var cfg = window.PresentationEditor.config || _peDefaultConfig();
+    if (opts && typeof opts === 'object') {
+      if (typeof opts.slideSelector === 'string' && opts.slideSelector.trim()) cfg.slideSelector = opts.slideSelector.trim();
+      if (typeof opts.theme === 'string') cfg.theme = opts.theme;
+      if (typeof opts.autoDetect === 'boolean') cfg.autoDetect = opts.autoDetect;
+      if (opts.regen && typeof opts.regen === 'object') cfg.regen = Object.assign(cfg.regen || {}, opts.regen);
+    }
+    window.PresentationEditor.config = cfg;
+    return cfg;
+  };
+
+  // Internal accessor — replaces hardcoded '.slide' literals.
+  function _peSel() {
+    var c = window.PresentationEditor.config;
+    return (c && c.slideSelector) || '.slide';
+  }
+  window.PresentationEditor._slideSelector = _peSel;
 
   // ── 테마 정의 (CSS 변수만 override — HTML 의 토큰 시스템 위에 카스케이드) ─
   var THEMES = {
@@ -1029,7 +1080,7 @@ $ 명령어 입력
     modal.addEventListener('click', (e) => { if (e.target === modal) modal.style.display = 'none'; });
 
     function getCurrentSlide() {
-      const slides = Array.from(document.querySelectorAll('.slide'));
+      const slides = Array.from(document.querySelectorAll(_peSel()));
       const center = window.innerHeight / 2;
       let best = null, bestDist = Infinity;
       slides.forEach(s => {
@@ -1341,7 +1392,7 @@ $ 명령어 입력
      슬라이드 네비게이션 — 키보드 + 카운터
      ------------------------------------------------------------ */
   function initSlideNav() {
-    const slides = () => Array.from(document.querySelectorAll('.slide'));
+    const slides = () => Array.from(document.querySelectorAll(_peSel()));
     function getCurrentIdx() {
       const list = slides();
       const center = window.innerHeight / 2;
@@ -1525,7 +1576,7 @@ $ 명령어 입력
       });
       slide.appendChild(wrap);
     }
-    document.querySelectorAll('.slide').forEach(injectIntoSlide);
+    document.querySelectorAll(_peSel()).forEach(injectIntoSlide);
 
     // 슬라이드 빌더로 추가된 새 슬라이드도 자동 주입
     new MutationObserver((mutations) => {
@@ -2272,7 +2323,7 @@ $ 명령어 입력
 
   async function captureFirstSlide(opts) {
     opts = opts || {};
-    var slide = document.querySelector('.slide');
+    var slide = document.querySelector(_peSel());
     if (!slide) throw new Error('첫 슬라이드를 찾을 수 없음');
 
     var html2canvas = await loadHtml2Canvas();
@@ -2431,7 +2482,7 @@ $ 명령어 입력
 
   async function exportPdfHighQuality(opts) {
     opts = opts || {};
-    var slideSelector = opts.selector || '.slide';
+    var slideSelector = opts.selector || _peSel();
     var slug = (location.pathname.match(/\/pt\/([^\/]+)/) || [])[1] || 'slides';
 
     showToast && showToast('⏳ PDF 라이브러리 로드 중…');
@@ -2525,7 +2576,7 @@ $ 명령어 입력
 
       try {
         await preloadFonts();
-        var slides = document.querySelectorAll('.slide');
+        var slides = document.querySelectorAll(_peSel());
         if (slides.length === 0) throw new Error('슬라이드 없음');
 
         var pdf = new jsPDF({
@@ -2655,14 +2706,136 @@ $ 명령어 입력
   window.PresentationEditor.initOgButton = initOgButton;
 
   /* ============================================================
+     Regen-Preservation Phase 1A — Deck identity (content hash)
+     ------------------------------------------------------------
+     설계 문서: docs/REGEN-PRESERVATION.md §3
+     목적: AI 가 deck 을 재생성해도 같은 deck 임을 인식하기 위한
+           pathname 무관 content-hash ID. URL/파일 복사·재export
+           에서도 살아남음. v1.2.x 의 pathname 기반 IDB 키와는
+           완전 별개로 추가됨 (BC 보존).
+     사용처: Phase 3 의 regen-detection 다이얼로그.
+     ============================================================ */
+  function _peNormalize(s) {
+    if (!s) return '';
+    // NFKC + lowercase + collapse whitespace + strip emoji-ish chars + max 200 chars
+    try { s = s.normalize('NFKC'); } catch (_) {}
+    return String(s).toLowerCase()
+      .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 200);
+  }
+
+  function _peSlideTitle(section) {
+    var h = section.querySelector('h1, h2, h3, [data-pe-title]');
+    return _peNormalize(h ? h.textContent : '');
+  }
+
+  function _peDetectGenerator() {
+    if (window.Reveal) return 'reveal';
+    if (window.Slidev || window.__VUE__) return 'slidev';
+    if (document.querySelector('[data-marpit-svg], [data-marpit-fragments]')) return 'marp';
+    if (window.__fs_edit__ || document.querySelector('section.slide .reveal')) return 'frontend-slides';
+    return 'unknown';
+  }
+
+  function _peDeckSignature() {
+    var sel = _peSel();
+    var slides = document.querySelectorAll(sel);
+    var titles = [];
+    var bodyText = [];
+    for (var i = 0; i < slides.length; i++) {
+      titles.push(_peSlideTitle(slides[i]));
+      bodyText.push(_peNormalize(slides[i].textContent || '').slice(0, 500));
+    }
+    titles.sort(); // reorder-resistant
+    return JSON.stringify({
+      title: _peNormalize(document.title),
+      slideTitles: titles,
+      bodySample: bodyText.join('|').slice(0, 4000),
+      generator: _peDetectGenerator(),
+      slideCount: slides.length
+    });
+  }
+
+  // Cheap djb2-style hash — sufficient for deckId until SubtleCrypto resolves.
+  function _peHash32(str) {
+    var h = 5381 >>> 0;
+    for (var i = 0; i < str.length; i++) {
+      h = (((h << 5) + h) + str.charCodeAt(i)) >>> 0;
+    }
+    return h.toString(16).padStart(8, '0');
+  }
+
+  // SubtleCrypto-based stronger hash; resolves async, replaces sync djb2.
+  function _peSha1Hex(str) {
+    if (!(window.crypto && window.crypto.subtle)) {
+      return Promise.resolve(_peHash32(str) + _peHash32(str.split('').reverse().join('')));
+    }
+    var enc = new TextEncoder().encode(str);
+    return window.crypto.subtle.digest('SHA-1', enc).then(function (buf) {
+      var arr = new Uint8Array(buf), out = '';
+      for (var i = 0; i < arr.length; i++) out += arr[i].toString(16).padStart(2, '0');
+      return out;
+    });
+  }
+
+  // 4-band × 8-row MinHash sketch over body shingles, for fuzzy deck match.
+  function _peDeckLSH() {
+    var sel = _peSel();
+    var text = '';
+    var slides = document.querySelectorAll(sel);
+    for (var i = 0; i < slides.length; i++) text += ' ' + _peNormalize(slides[i].textContent || '');
+    var tokens = text.split(' ').filter(Boolean);
+    if (tokens.length < 5) return [];
+    var shingles = [];
+    for (var j = 0; j + 5 <= tokens.length; j++) shingles.push(tokens.slice(j, j + 5).join(' '));
+    var bands = [];
+    for (var b = 0; b < 4; b++) {
+      var rows = [];
+      for (var r = 0; r < 8; r++) {
+        var seed = (b * 8 + r) + 1;
+        var min = 0xffffffff;
+        for (var k = 0; k < shingles.length; k++) {
+          var hh = _peHash32(seed + ':' + shingles[k]);
+          var n = parseInt(hh, 16);
+          if (n < min) min = n;
+        }
+        rows.push(min.toString(16));
+      }
+      bands.push(rows.join('-'));
+    }
+    return bands;
+  }
+
+  function _peComputeDeckId() {
+    try {
+      var sig = _peDeckSignature();
+      _peSha1Hex(sig).then(function (hex) {
+        window.PresentationEditor.deckId = 'd_' + hex.slice(0, 12);
+        window.PresentationEditor.deckLSH = _peDeckLSH();
+        window.dispatchEvent(new CustomEvent('pe:deck-identified', {
+          detail: { deckId: window.PresentationEditor.deckId, deckLSH: window.PresentationEditor.deckLSH }
+        }));
+      }).catch(function (e) { console.warn('[pe] deckId compute failed', e); });
+    } catch (e) {
+      console.warn('[pe] deck signature failed', e);
+    }
+  }
+  window.PresentationEditor.computeDeckId = _peComputeDeckId;
+
+  /* ============================================================
      IndexedDB layer — 이미지 + 텍스트 편집 영구 저장
      localStorage 5MB 한계 회피. 페이지별 분리.
      dependency 없음 (idb wrapper 미사용 — 단순한 KV 만 필요)
      ============================================================ */
   var DB_NAME = 'pt-editor';
-  var DB_VERSION = 1;
+  var DB_VERSION = 2;                   // v2: + decks/slides/blobs stores for regen-preservation
   var STORE_IMAGES = 'images';
   var STORE_EDITS = 'edits';
+  var STORE_DECKS = 'decks';            // §3 — { deckId, firstSeen, lastSeen, title, slideCount, generatorHint, deckLSH }
+  var STORE_SLIDES = 'slides';          // §2 — SlideEditRecord (keyed by `${deckId}::${fp.primary}::${skel8}`)
+  var STORE_BLOBS = 'blobs';            // user-pasted images, keyed by sha256(blob)
   var dbPromise = null;
 
   function openDB() {
@@ -2680,6 +2853,18 @@ $ 명령어 입력
         }
         if (!db.objectStoreNames.contains(STORE_EDITS)) {
           db.createObjectStore(STORE_EDITS);
+        }
+        // v2: regen-preservation stores
+        if (!db.objectStoreNames.contains(STORE_DECKS)) {
+          db.createObjectStore(STORE_DECKS, { keyPath: 'deckId' });
+        }
+        if (!db.objectStoreNames.contains(STORE_SLIDES)) {
+          var ss = db.createObjectStore(STORE_SLIDES, { keyPath: 'id' });
+          ss.createIndex('deckId', 'deckId', { unique: false });
+          ss.createIndex('updatedAt', 'updatedAt', { unique: false });
+        }
+        if (!db.objectStoreNames.contains(STORE_BLOBS)) {
+          db.createObjectStore(STORE_BLOBS, { keyPath: 'key' });
         }
       };
       req.onsuccess = function () { resolve(req.result); };
@@ -2793,6 +2978,42 @@ $ 명령어 입력
       }
     }
   };
+  // ── Phase 3: regen-preservation IDB methods ─────────────────────────
+  ptDB.putDeck = function (rec) {
+    return dbOp(STORE_DECKS, 'readwrite', function (s) { return s.put(rec); });
+  };
+  ptDB.getDeck = function (deckId) {
+    return dbOp(STORE_DECKS, 'readonly', function (s) { return s.get(deckId); });
+  };
+  ptDB.listDecks = function () {
+    return openDB().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var tx = db.transaction(STORE_DECKS, 'readonly');
+        var out = [];
+        var req = tx.objectStore(STORE_DECKS).openCursor();
+        req.onsuccess = function (e) { var c = e.target.result; if (!c) return resolve(out); out.push(c.value); c.continue(); };
+        req.onerror = function () { reject(req.error); };
+      });
+    });
+  };
+  ptDB.putSlideEdit = function (rec) {
+    return dbOp(STORE_SLIDES, 'readwrite', function (s) { return s.put(rec); });
+  };
+  ptDB.getSlideEditsForDeck = function (deckId) {
+    return openDB().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        var tx = db.transaction(STORE_SLIDES, 'readonly');
+        var out = [];
+        var idx = tx.objectStore(STORE_SLIDES).index('deckId');
+        var req = idx.openCursor(IDBKeyRange.only(deckId));
+        req.onsuccess = function (e) { var c = e.target.result; if (!c) return resolve(out); out.push(c.value); c.continue(); };
+        req.onerror = function () { reject(req.error); };
+      });
+    });
+  };
+  ptDB.deleteSlideEdit = function (id) {
+    return dbOp(STORE_SLIDES, 'readwrite', function (s) { return s.delete(id); });
+  };
   window.PresentationEditor.db = ptDB;
 
   // 자동 시작: IDB 마이그레이션 + 이미지 복원
@@ -2801,5 +3022,492 @@ $ 명령어 입력
       ptDB.migrateFromLocalStorage().catch(function () {});
       setTimeout(function () { ptDB.restoreImages(); }, 200);
     }, 600);
+  }
+
+  /* ============================================================
+     Phase 3: Regen-Preservation MVP
+     ------------------------------------------------------------
+     설계 문서: docs/REGEN-PRESERVATION.md
+     포함: slideFingerprint, edit-capture observer, detect-and-reapply,
+           confidence-bucketed conflict 다이얼로그.
+     스코프 (MVP): text 블록만 자동 적용 (이미지/차트/코드는 v2).
+                  whole-slide lock 만 (block-level lock 은 v2).
+                  단일 탭 (BroadcastChannel 동기화 v2).
+     ============================================================ */
+  var PE_EDITABLE_TAGS = { H1:1, H2:1, H3:1, H4:1, H5:1, H6:1, P:1, LI:1, TD:1, TH:1, FIGCAPTION:1, BLOCKQUOTE:1, SUMMARY:1, DT:1, DD:1 };
+
+  // 6.1 Editable block 열거. 같은 깊이의 자식 block 보유 여부 확인 후 '잎' 만 block 으로.
+  function _peEnumerateBlocks(sectionEl) {
+    if (!sectionEl) return [];
+    var blocks = [];
+    var counters = {};      // tag -> nth
+    var walker = document.createTreeWalker(sectionEl, NodeFilter.SHOW_ELEMENT, null);
+    var node = walker.currentNode;
+    while ((node = walker.nextNode())) {
+      var tag = node.tagName;
+      if (!PE_EDITABLE_TAGS[tag]) continue;
+      if (node.hasAttribute && node.hasAttribute('data-pe-no-edit')) continue;
+      // 잎 검사: 자식 중 editable tag 있으면 skip (외곽 컨테이너로 간주)
+      var hasChildBlock = false;
+      var children = node.querySelectorAll && node.querySelectorAll('h1,h2,h3,h4,h5,h6,p,li,td,th,figcaption,blockquote,summary,dt,dd');
+      for (var i = 0; children && i < children.length; i++) {
+        if (children[i] !== node && PE_EDITABLE_TAGS[children[i].tagName]) { hasChildBlock = true; break; }
+      }
+      if (hasChildBlock && !node.hasAttribute('data-pe-block')) continue;
+      counters[tag] = (counters[tag] || 0);
+      var key = tag.toLowerCase() + '#' + counters[tag];
+      counters[tag]++;
+      blocks.push({
+        el: node,
+        tag: tag.toLowerCase(),
+        key: key,
+        text: (node.textContent || '').trim(),
+        html: node.innerHTML
+      });
+    }
+    return blocks;
+  }
+
+  // 1. Slide fingerprint
+  function _peSlideFingerprint(sectionEl) {
+    var titleEl = sectionEl.querySelector('h1, h2, h3, [data-pe-title]');
+    var titleNorm = _peNormalize(titleEl ? titleEl.textContent : '');
+    var blocks = _peEnumerateBlocks(sectionEl);
+    var bodyText = blocks.map(function (b) { return b.text; }).join(' ');
+    var tokens = _peNormalize(bodyText).split(' ').filter(Boolean);
+    var shingles = [];
+    for (var i = 0; i + 5 <= tokens.length; i++) shingles.push(tokens.slice(i, i + 5).join(' '));
+    var skeleton = blocks.map(function (b) { return b.tag; }).join(',');
+    return {
+      primary: _peHash32(titleNorm),
+      titleNorm: titleNorm,
+      shingleHashes: shingles.map(_peHash32),
+      structure: _peHash32(skeleton),
+      structureRaw: skeleton,
+      domPath: _peDomPath(sectionEl),
+      blockCount: blocks.length
+    };
+  }
+  function _peDomPath(el) {
+    var parts = [], cur = el;
+    while (cur && cur.parentNode && cur.tagName) {
+      var sibs = cur.parentNode.children, idx = 0;
+      for (var i = 0; i < sibs.length; i++) { if (sibs[i] === cur) { idx = i; break; } }
+      parts.unshift(cur.tagName.toLowerCase() + '[' + idx + ']');
+      cur = cur.parentNode;
+      if (cur === document.body) break;
+    }
+    return parts.join('/');
+  }
+
+  // 4.1 Slide-level match score (codex 권고: 0.40·title + 0.35·jaccard + 0.15·skeleton + 0.05·dom).
+  function _peJaccard(a, b) {
+    if (!a.length || !b.length) return 0;
+    var sa = new Set(a), sb = new Set(b), inter = 0;
+    sa.forEach(function (x) { if (sb.has(x)) inter++; });
+    return inter / (sa.size + sb.size - inter);
+  }
+  function _peSlideMatchScore(fpA, fpB) {
+    var titleEq = (fpA.primary === fpB.primary) ? 1 : 0;
+    if (!titleEq && fpA.titleNorm && fpB.titleNorm) {
+      // soft title fuzzy: substring containment
+      if (fpA.titleNorm.indexOf(fpB.titleNorm) >= 0 || fpB.titleNorm.indexOf(fpA.titleNorm) >= 0) titleEq = 0.6;
+    }
+    var jacc = _peJaccard(fpA.shingleHashes, fpB.shingleHashes);
+    var skel = (fpA.structure === fpB.structure) ? 1 : (fpA.structureRaw && fpB.structureRaw && _peJaccard(fpA.structureRaw.split(','), fpB.structureRaw.split(',')));
+    var dom = (fpA.domPath === fpB.domPath) ? 1 : 0;
+    return 0.40 * titleEq + 0.35 * jacc + 0.15 * (skel || 0) + 0.10 * dom;
+  }
+
+  // 4.2 Block-level match within a matched slide.
+  function _peLevenshteinRatio(a, b) {
+    if (!a && !b) return 1; if (!a || !b) return 0;
+    if (a === b) return 1;
+    var la = a.length, lb = b.length;
+    if (Math.abs(la - lb) / Math.max(la, lb) > 0.7) return 0;  // skip far-apart
+    var v0 = new Array(lb + 1), v1 = new Array(lb + 1);
+    for (var j = 0; j <= lb; j++) v0[j] = j;
+    for (var i = 0; i < la; i++) {
+      v1[0] = i + 1;
+      for (var j2 = 0; j2 < lb; j2++) {
+        var cost = a.charCodeAt(i) === b.charCodeAt(j2) ? 0 : 1;
+        v1[j2 + 1] = Math.min(v1[j2] + 1, v0[j2 + 1] + 1, v0[j2] + cost);
+      }
+      var tmp = v0; v0 = v1; v1 = tmp;
+    }
+    return 1 - (v0[lb] / Math.max(la, lb));
+  }
+  function _peFindBlockInSlide(sectionEl, storedBlock) {
+    var live = _peEnumerateBlocks(sectionEl);
+    // 1. exact key+tag
+    for (var i = 0; i < live.length; i++) {
+      if (live[i].key === storedBlock.blockKey && live[i].tag === storedBlock.tag) return { live: live[i], score: 1.0 };
+    }
+    // 2. same tag, fuzzy text
+    var sameTag = live.filter(function (b) { return b.tag === storedBlock.tag; });
+    var best = null, bestScore = 0;
+    for (var j = 0; j < sameTag.length; j++) {
+      var s = _peLevenshteinRatio(sameTag[j].text, storedBlock.originalText);
+      if (s > bestScore) { bestScore = s; best = sameTag[j]; }
+    }
+    if (best && bestScore > 0.6) return { live: best, score: bestScore * 0.8 };
+    // 3. heading demotion (h2 -> h3)
+    var HEAD = { h1:1, h2:1, h3:1, h4:1, h5:1, h6:1 };
+    if (HEAD[storedBlock.tag]) {
+      var headings = live.filter(function (b) { return HEAD[b.tag]; });
+      var bestH = null, bestHS = 0;
+      for (var k = 0; k < headings.length; k++) {
+        var sh = _peLevenshteinRatio(headings[k].text, storedBlock.originalText);
+        if (sh > bestHS) { bestHS = sh; bestH = headings[k]; }
+      }
+      if (bestH && bestHS > 0.75) return { live: bestH, score: bestHS * 0.6, demoted: true };
+    }
+    return null;
+  }
+
+  // 4.3 Bucket
+  function _peBucket(confidence) {
+    if (confidence > 0.85) return 'high';
+    if (confidence > 0.5) return 'medium';
+    return 'low';
+  }
+
+  // ── Edit-capture: 사용자 편집 → IDB 영구 저장 ─────────────────────
+  var _peEditDebounce = {};
+  var _peWriting = false;     // 자기 자신 write 시 observer 무시 (loop guard)
+  function _peCaptureEdit(blockEl, sectionEl) {
+    if (_peWriting) return;
+    var fp = _peSlideFingerprint(sectionEl);
+    var blocks = _peEnumerateBlocks(sectionEl);
+    var blockData = null;
+    for (var i = 0; i < blocks.length; i++) {
+      if (blocks[i].el === blockEl) { blockData = blocks[i]; break; }
+    }
+    if (!blockData) return;
+
+    var deckId = window.PresentationEditor.deckId;
+    if (!deckId) return;     // deckId 아직 미계산 — skip
+    var slideKey = deckId + '::' + fp.primary + '::' + (fp.structure + '').slice(0, 8);
+
+    var debKey = slideKey + '|' + blockData.key;
+    clearTimeout(_peEditDebounce[debKey]);
+    _peEditDebounce[debKey] = setTimeout(function () {
+      ptDB.getSlideEditsForDeck(deckId).then(function (recs) {
+        var existing = recs.filter(function (r) { return r.id === slideKey; })[0];
+        var origSnapshot = blockEl.dataset && blockEl.dataset.peOriginal;
+        var blockEdit = {
+          blockKey: blockData.key,
+          tag: blockData.tag,
+          type: 'text',
+          originalHTML: origSnapshot || blockData.html,
+          originalText: (origSnapshot ? origSnapshot.replace(/<[^>]+>/g, '') : blockData.text),
+          editedHTML: blockData.html,
+          editedText: blockData.text,
+          editedAt: Date.now()
+        };
+        var rec = existing || {
+          id: slideKey, deckId: deckId, fingerprint: fp,
+          blocks: [], locked: false, updatedAt: Date.now()
+        };
+        // upsert block edit
+        var idx = -1;
+        for (var b = 0; b < rec.blocks.length; b++) if (rec.blocks[b].blockKey === blockData.key) { idx = b; break; }
+        if (idx >= 0) {
+          // preserve original from first capture
+          blockEdit.originalHTML = rec.blocks[idx].originalHTML;
+          blockEdit.originalText = rec.blocks[idx].originalText;
+          rec.blocks[idx] = blockEdit;
+        } else {
+          rec.blocks.push(blockEdit);
+        }
+        rec.fingerprint = fp;
+        rec.updatedAt = Date.now();
+        return ptDB.putSlideEdit(rec);
+      }).catch(function (e) { console.warn('[pe-regen] capture failed', e); });
+    }, 800);
+  }
+
+  function _peStartEditCapture() {
+    if (!window.PresentationEditor.config) return;
+    var sel = _peSel();
+    var slides = document.querySelectorAll(sel);
+    if (!slides.length) return;
+
+    // 1. 각 editable block 의 첫 화면 상태(=AI v1 originalHTML) 를 dataset 에 동결.
+    //    이후 사용자 편집 시 originalHTML 은 보존, editedHTML 만 업데이트.
+    for (var i = 0; i < slides.length; i++) {
+      var blocks = _peEnumerateBlocks(slides[i]);
+      for (var b = 0; b < blocks.length; b++) {
+        var el = blocks[b].el;
+        if (!el.dataset.peOriginal) el.dataset.peOriginal = el.innerHTML;
+      }
+    }
+
+    // 2. MutationObserver — debounced, loop-guarded.
+    var obs = new MutationObserver(function (muts) {
+      if (_peWriting) return;
+      var seen = new Set();
+      for (var m = 0; m < muts.length; m++) {
+        var t = muts[m].target;
+        // ascend to nearest editable block
+        var cur = t.nodeType === 1 ? t : t.parentElement;
+        while (cur && cur.tagName && !PE_EDITABLE_TAGS[cur.tagName]) cur = cur.parentElement;
+        if (!cur || seen.has(cur)) continue;
+        seen.add(cur);
+        // ascend to slide
+        var sec = cur;
+        while (sec && sec !== document.body && !sec.matches(_peSel())) sec = sec.parentElement;
+        if (sec && sec.matches && sec.matches(_peSel())) _peCaptureEdit(cur, sec);
+      }
+    });
+    for (var s = 0; s < slides.length; s++) {
+      obs.observe(slides[s], { subtree: true, characterData: true, childList: true });
+    }
+    window.PresentationEditor._regenObserver = obs;
+  }
+
+  // ── 7. Lock helpers ──────────────────────────────────────────────
+  function _peLockSlide(sectionEl, locked) {
+    if (locked) {
+      sectionEl.setAttribute('data-pe-locked', 'true');
+      sectionEl.setAttribute('data-pe-locked-at', new Date().toISOString());
+    } else {
+      sectionEl.removeAttribute('data-pe-locked');
+      sectionEl.removeAttribute('data-pe-locked-at');
+    }
+    // also persist on slide record
+    var fp = _peSlideFingerprint(sectionEl);
+    var deckId = window.PresentationEditor.deckId; if (!deckId) return;
+    var slideKey = deckId + '::' + fp.primary + '::' + (fp.structure + '').slice(0, 8);
+    ptDB.getSlideEditsForDeck(deckId).then(function (recs) {
+      var rec = recs.filter(function (r) { return r.id === slideKey; })[0] || { id: slideKey, deckId: deckId, fingerprint: fp, blocks: [], updatedAt: Date.now() };
+      rec.locked = !!locked; rec.updatedAt = Date.now();
+      return ptDB.putSlideEdit(rec);
+    });
+  }
+  window.PresentationEditor.lockSlide = _peLockSlide;
+
+  // ── 4. Detect & Reapply ──────────────────────────────────────────
+  // deckId 확정 후 호출. 저장된 edits 가 있으면 diff 계산 후 다이얼로그 띄움.
+  async function _peDetectAndReapply() {
+    if (!(window.PresentationEditor.config && window.PresentationEditor.config.regen && window.PresentationEditor.config.regen.enabled)) return;
+    var deckId = window.PresentationEditor.deckId;
+    if (!deckId) return;
+    var stored;
+    try { stored = await ptDB.getSlideEditsForDeck(deckId); }
+    catch (e) { console.warn('[pe-regen] read failed', e); return; }
+    if (!stored || !stored.length) {
+      // 정확 일치 miss — LSH fuzzy match 시도
+      var liveLSH = window.PresentationEditor.deckLSH || [];
+      var allDecks = await ptDB.listDecks().catch(function () { return []; });
+      var bestDeck = null, bestOverlap = 0;
+      for (var d = 0; d < allDecks.length; d++) {
+        var dr = allDecks[d];
+        if (!dr.deckLSH) continue;
+        var overlap = 0;
+        for (var bi = 0; bi < liveLSH.length && bi < dr.deckLSH.length; bi++) {
+          if (liveLSH[bi] === dr.deckLSH[bi]) overlap++;
+        }
+        if (overlap > bestOverlap) { bestOverlap = overlap; bestDeck = dr; }
+      }
+      if (bestDeck && bestOverlap >= 2) {       // 4밴드 중 2개 이상 일치 = LSH Jaccard ≥ 0.5
+        var ok = window.confirm('이 deck 의 재생성된 버전으로 보입니다 ("' + (bestDeck.title || '?') + '"). 저장된 편집을 다시 적용하시겠습니까?');
+        if (ok) {
+          stored = await ptDB.getSlideEditsForDeck(bestDeck.deckId);
+          // rebind: copy edits to new deckId
+          for (var rs = 0; rs < stored.length; rs++) {
+            var newRec = Object.assign({}, stored[rs]);
+            newRec.deckId = deckId;
+            newRec.id = deckId + '::' + newRec.fingerprint.primary + '::' + (newRec.fingerprint.structure + '').slice(0, 8);
+            await ptDB.putSlideEdit(newRec);
+          }
+          stored = await ptDB.getSlideEditsForDeck(deckId);
+        } else { return; }
+      } else { return; }
+    }
+    // upsert deck record
+    ptDB.putDeck({
+      deckId: deckId, title: document.title, slideCount: document.querySelectorAll(_peSel()).length,
+      generatorHint: _peDetectGenerator(), deckLSH: window.PresentationEditor.deckLSH,
+      firstSeen: Date.now(), lastSeen: Date.now()
+    });
+
+    // 4.1 Slide-level match
+    var liveSlides = Array.from(document.querySelectorAll(_peSel()));
+    var liveFps = liveSlides.map(_peSlideFingerprint);
+    var diffItems = [];
+    var orphaned = [];
+    var usedLive = new Set();
+    // greedy assign
+    var pairs = [];
+    for (var si = 0; si < stored.length; si++) {
+      for (var li = 0; li < liveSlides.length; li++) {
+        pairs.push({ si: si, li: li, score: _peSlideMatchScore(stored[si].fingerprint, liveFps[li]) });
+      }
+    }
+    pairs.sort(function (a, b) { return b.score - a.score; });
+    var matched = {};   // si -> {liveIdx, score}
+    for (var p = 0; p < pairs.length; p++) {
+      var pair = pairs[p];
+      if (pair.score < 0.45) break;
+      if (matched[pair.si] || usedLive.has(pair.li)) continue;
+      matched[pair.si] = { liveIdx: pair.li, score: pair.score };
+      usedLive.add(pair.li);
+    }
+
+    for (var ss2 = 0; ss2 < stored.length; ss2++) {
+      var rec = stored[ss2];
+      var match = matched[ss2];
+      if (!match) { orphaned.push(rec); continue; }
+      var liveSlide = liveSlides[match.liveIdx];
+      // skip locked
+      if (rec.locked) {
+        // locked slides 는 자동으로 사용자 편집 그대로 보존 (DOM 교체 없음)
+        // 이미 DOM 이 AI v2 라면 → 다이얼로그에 별도 표시
+      }
+      for (var bb = 0; bb < rec.blocks.length; bb++) {
+        var sb = rec.blocks[bb];
+        var found = _peFindBlockInSlide(liveSlide, sb);
+        if (!found) {
+          diffItems.push({
+            slideIdx: match.liveIdx + 1, slideTitle: _peSlideTitle(liveSlide),
+            block: sb, liveBlock: null,
+            confidence: 0, bucket: 'low',
+            reason: 'block-deleted',
+            slideMatchScore: match.score
+          });
+          continue;
+        }
+        var liveText = found.live.text;
+        // skip-identical: AI v2 already has user's text
+        if (liveText === sb.editedText) continue;
+        // skip-user-already-matches: AI v2 == user's edit anyway
+        var blockMatch = found.score;
+        var conf = 0.5 * match.score + 0.5 * blockMatch;
+        diffItems.push({
+          slideIdx: match.liveIdx + 1, slideTitle: _peSlideTitle(liveSlide),
+          block: sb, liveBlock: found.live,
+          liveEl: found.live.el,
+          confidence: conf,
+          bucket: _peBucket(conf),
+          reason: liveText === sb.originalText ? 'AI-unchanged-user-edited' : 'three-way-conflict',
+          slideMatchScore: match.score,
+          locked: rec.locked
+        });
+      }
+    }
+    if (diffItems.length === 0 && orphaned.length === 0) return;
+    _peShowReapplyDialog(diffItems, orphaned);
+  }
+  window.PresentationEditor.detectAndReapply = _peDetectAndReapply;
+
+  // ── 5. Conflict Dialog UI ────────────────────────────────────────
+  function _peShowReapplyDialog(diffItems, orphaned) {
+    if (document.getElementById('pe-regen-dialog')) return;     // idempotent
+    var bg = document.createElement('div');
+    bg.id = 'pe-regen-dialog';
+    bg.setAttribute('data-pe-no-export', '1');
+    bg.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.6);backdrop-filter:blur(8px);display:flex;align-items:center;justify-content:center;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif;';
+
+    var modal = document.createElement('div');
+    modal.style.cssText = 'background:#fff;color:#1a1a1a;width:min(720px,92vw);max-height:86vh;overflow:auto;border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.4);padding:24px;';
+
+    var counts = { high: 0, medium: 0, low: 0 };
+    diffItems.forEach(function (d) { counts[d.bucket]++; });
+
+    modal.innerHTML =
+      '<h2 style="margin:0 0 6px;font-size:20px;font-weight:700;">편집 다시 적용?</h2>' +
+      '<p style="margin:0 0 16px;color:#555;font-size:13px;">이 deck 의 이전 편집 ' + diffItems.length + '개 발견. 새 AI 버전에 다시 적용하시겠습니까?</p>' +
+      '<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">' +
+        '<button id="pe-apply-high" style="background:#0a84ff;color:#fff;border:none;padding:8px 14px;border-radius:8px;font-weight:600;cursor:pointer;font-size:13px;">신뢰도 높음만 적용 (' + counts.high + ')</button>' +
+        '<button id="pe-apply-all" style="background:#34c759;color:#fff;border:none;padding:8px 14px;border-radius:8px;font-weight:600;cursor:pointer;font-size:13px;">선택한 항목 적용</button>' +
+        '<button id="pe-discard" style="background:#f2f2f7;color:#1a1a1a;border:none;padding:8px 14px;border-radius:8px;font-weight:600;cursor:pointer;font-size:13px;">전체 무시</button>' +
+        '<button id="pe-cancel" style="margin-left:auto;background:transparent;border:none;color:#888;cursor:pointer;font-size:13px;">닫기</button>' +
+      '</div>' +
+      '<div id="pe-diff-list" style="display:flex;flex-direction:column;gap:10px;"></div>' +
+      (orphaned.length ? '<div style="margin-top:18px;padding-top:14px;border-top:1px solid #eee;color:#888;font-size:12px;">고아 편집 ' + orphaned.length + '개 (해당 슬라이드가 새 버전에 없음). 다이얼로그 닫으면 보존됨.</div>' : '');
+
+    var list = modal.querySelector ? null : null;
+    bg.appendChild(modal);
+    document.body.appendChild(bg);
+    list = document.getElementById('pe-diff-list');
+
+    diffItems.forEach(function (d, idx) {
+      var row = document.createElement('div');
+      var bgColor = d.bucket === 'high' ? '#e8f5e9' : d.bucket === 'medium' ? '#fff8e1' : '#fbe9e7';
+      var label = d.bucket === 'high' ? 'HIGH' : d.bucket === 'medium' ? 'MEDIUM' : 'LOW';
+      var checked = (d.bucket === 'high' || d.bucket === 'medium') ? 'checked' : '';
+      row.style.cssText = 'background:' + bgColor + ';border-radius:10px;padding:12px;font-size:13px;';
+      row.innerHTML =
+        '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">' +
+          '<input type="checkbox" data-pe-idx="' + idx + '" ' + checked + ' style="margin:0;">' +
+          '<b style="font-size:13px;">슬라이드 ' + d.slideIdx + ' — ' + (d.slideTitle || '(제목 없음)').slice(0, 50) + '</b>' +
+          '<span style="margin-left:auto;background:rgba(0,0,0,.06);padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;">' + label + ' · ' + Math.round(d.confidence * 100) + '%</span>' +
+        '</div>' +
+        '<div style="font-size:12px;color:#666;margin-bottom:4px;"><b>' + (d.block.tag || '') + '</b> · ' + (d.reason === 'block-deleted' ? '블록 삭제됨' : d.reason) + '</div>' +
+        (d.liveBlock ? (
+          '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px;">' +
+            '<div><div style="color:#888;font-size:11px;margin-bottom:2px;">당신의 편집</div><div style="background:rgba(255,255,255,.7);padding:6px 8px;border-radius:6px;">' + _peEscape(d.block.editedText).slice(0, 200) + '</div></div>' +
+            '<div><div style="color:#888;font-size:11px;margin-bottom:2px;">AI v2</div><div style="background:rgba(255,255,255,.4);padding:6px 8px;border-radius:6px;">' + _peEscape(d.liveBlock.text).slice(0, 200) + '</div></div>' +
+          '</div>'
+        ) : '<div style="font-size:12px;color:#c00;">→ 적용 불가 (블록 위치 못 찾음)</div>');
+      list.appendChild(row);
+    });
+
+    function applyDiffs(filterFn) {
+      _peWriting = true;
+      try {
+        diffItems.forEach(function (d, idx) {
+          if (!filterFn(d, idx)) return;
+          if (!d.liveEl) return;
+          d.liveEl.innerHTML = d.block.editedHTML;
+          d.liveEl.dataset.peOriginal = d.block.editedHTML;     // new baseline
+        });
+      } finally {
+        setTimeout(function () { _peWriting = false; }, 50);
+      }
+      bg.remove();
+    }
+
+    document.getElementById('pe-apply-high').onclick = function () { applyDiffs(function (d) { return d.bucket === 'high'; }); };
+    document.getElementById('pe-apply-all').onclick = function () {
+      applyDiffs(function (d, idx) {
+        var cb = list.querySelector('input[data-pe-idx="' + idx + '"]');
+        return cb && cb.checked;
+      });
+    };
+    document.getElementById('pe-discard').onclick = function () {
+      // discard = remove all stored edits for this deck
+      ptDB.getSlideEditsForDeck(window.PresentationEditor.deckId).then(function (recs) {
+        recs.forEach(function (r) { ptDB.deleteSlideEdit(r.id); });
+      });
+      bg.remove();
+    };
+    document.getElementById('pe-cancel').onclick = function () { bg.remove(); };
+  }
+  function _peEscape(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  // Phase 1A+1B: config 자동 감지 + deckId 계산 (DOM 안정 후 1회).
+  // 사용자가 명시적으로 PresentationEditor.init({...}) 를 먼저 부르면 그 값이 우선됨.
+  function _peBootstrap() {
+    if (!window.PresentationEditor.config) window.PresentationEditor.init();
+    _peComputeDeckId();
+    // Phase 3: deckId 확정 후 detect-and-reapply 1회 + edit capture observer 시작.
+    window.addEventListener('pe:deck-identified', function onIdent() {
+      window.removeEventListener('pe:deck-identified', onIdent);
+      try { _peDetectAndReapply(); } catch (e) { console.warn('[pe-regen] detect failed', e); }
+      try { _peStartEditCapture(); } catch (e) { console.warn('[pe-regen] capture start failed', e); }
+    });
+  }
+  if (typeof document !== 'undefined') {
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', function () { setTimeout(_peBootstrap, 100); });
+    } else {
+      setTimeout(_peBootstrap, 100);
+    }
   }
 })();
